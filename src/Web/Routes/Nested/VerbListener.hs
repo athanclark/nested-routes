@@ -1,16 +1,18 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Web.Routes.Nested.VerbListener where
 
-import Web.Routes.Nested.FileExtListener
+import           Web.Routes.Nested.FileExtListener
 
-import Data.Monoid
-import Network.Wai
+import           Network.Wai
 
-import Control.Applicative
-import Control.Monad.Writer
+import           Control.Applicative
+import           Control.Monad.Trans
+import           Control.Monad.Writer
+import           Data.Monoid
 
 
 data Verb = Get
@@ -22,6 +24,7 @@ data Verb = Get
 newtype Verbs a = Verbs { unVerbs :: [(Verb, a)] }
   deriving (Show, Eq, Functor)
 
+-- | Sorting instance
 instance Monoid (Verbs a) where
   mempty = Verbs []
   (Verbs []) `mappend` ys = ys
@@ -32,30 +35,44 @@ instance Monoid (Verbs a) where
     | x == y = Verbs $ y' : xs `mappend` ys
     | otherwise = error "unordered merge?"
 
--- | TODO: Change mappend to sorted / ordered merge
-newtype VerbListener a = VerbListener
-  { runVerbListener :: Writer (Verbs (FileExtListener ())) a }
+newtype VerbListenerT m a = VerbListenerT
+  { runVerbListenerT :: WriterT (Verbs (FileExts Response)) m a }
   deriving (Functor)
 
-deriving instance Applicative VerbListener
-deriving instance Monad VerbListener
+deriving instance Applicative m => Applicative (VerbListenerT m)
+deriving instance Monad m =>       Monad       (VerbListenerT m)
+deriving instance MonadIO m =>     MonadIO     (VerbListenerT m)
+deriving instance                  MonadTrans   VerbListenerT
 
-get :: FileExtListener () -> VerbListener ()
-get fl =
-  VerbListener $ tell $
-    Verbs [(Get, fl)]
 
-post :: FileExtListener () -> VerbListener ()
-post fl =
-  VerbListener $ tell $
-    Verbs [(Post, fl)]
+get :: (Monad m) =>
+       FileExtListenerT m ()
+    -> VerbListenerT m ()
+get flistener = do
+  (fileexts :: FileExts Response) <- lift $
+            execWriterT $ runFileExtListenerT flistener
+  VerbListenerT $ tell $
+    Verbs [(Get, fileexts)]
 
-put :: FileExtListener () -> VerbListener ()
-put fl =
-  VerbListener $ tell $
-    Verbs [(Put, fl)]
+-- post :: MonadIO m =>
+--         (ByteString -> m ())
+--      -> FileExtListener ()
+--      -> VerbListener ()
+-- post fl =
+--   VerbListener $ tell $
+--     Verbs [(Post, fl)]
+--
+-- put :: MonadIO m =>
+--        (ByteString -> m ())
+--     -> FileExtListener ()
+--     -> VerbListener ()
+-- put fl =
+--   VerbListener $ tell $
+--     Verbs [(Put, fl)]
 
-delete :: FileExtListener () -> VerbListener ()
-delete fl =
-  VerbListener $ tell $
-    Verbs [(Post, fl)]
+-- delete :: (Monad m) =>
+--           FileExtListenerT m ()
+--        -> VerbListenerT m ()
+-- delete fl =
+--   VerbListenerT $ tell $
+--     Verbs [(Post, fl)]

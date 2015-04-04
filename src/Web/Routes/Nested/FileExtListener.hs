@@ -5,13 +5,14 @@
 
 module Web.Routes.Nested.FileExtListener where
 
-import           Network.Wai
-import Network.HTTP.Types (status200)
-import qualified Data.Aeson           as A
-import qualified Data.Text.Lazy as LT
+import qualified Data.Aeson              as A
+import qualified Data.Text.Lazy          as LT
 import qualified Data.Text.Lazy.Encoding as LT
+import           Network.HTTP.Types      (status200)
+import           Network.Wai
 
 import           Control.Applicative
+import           Control.Monad.Trans
 import           Control.Monad.Writer
 import           Data.Monoid
 
@@ -24,6 +25,7 @@ data FileExt = Html
 newtype FileExts a = FileExts { unFileExts :: [(FileExt, a)] }
   deriving (Functor)
 
+-- | Sorting instance
 instance Monoid (FileExts a) where
   mempty = FileExts []
   (FileExts []) `mappend` ys = ys
@@ -34,31 +36,47 @@ instance Monoid (FileExts a) where
     | x == y = FileExts $ y' : xs `mappend` ys
     | otherwise = error "unordered merge?"
 
-newtype FileExtListener a = FileExtListener
-  { runFileExtListener :: Writer (FileExts Response) a }
+newtype FileExtListenerT m a = FileExtListenerT
+  { runFileExtListenerT :: WriterT (FileExts Response) m a }
   deriving (Functor)
 
-deriving instance Applicative FileExtListener
-deriving instance Monad FileExtListener
+deriving instance Applicative m => Applicative (FileExtListenerT m)
+deriving instance Monad m =>       Monad       (FileExtListenerT m)
+deriving instance MonadIO m =>     MonadIO     (FileExtListenerT m)
+deriving instance                  MonadTrans   FileExtListenerT
 
 -- html :: VerbListener () -> FileExtListener ()
 -- html vl = FileExtListener $ tell $
 --     FileExts [(Html, vl)]
 
-json :: A.ToJSON j => j -> FileExtListener ()
+json :: (A.ToJSON j, Monad m) =>
+        j
+     -> FileExtListenerT m ()
 json i =
   let r = responseLBS status200 [("Content-Type", "application/json")] $
             A.encode i
   in
-  FileExtListener $ tell $
+  FileExtListenerT $ tell $
     FileExts [(Json, r)]
 
-text :: LT.Text -> FileExtListener ()
+jsonp :: (A.ToJSON j, Monad m) =>
+         j
+      -> FileExtListenerT m ()
+jsonp i =
+  let r = responseLBS status200 [("Content-Type", "application/javascript")] $
+            A.encode i
+  in
+  FileExtListenerT $ tell $
+    FileExts [(Json, r)]
+
+text :: (Monad m) =>
+        LT.Text
+     -> FileExtListenerT m ()
 text i =
   let r = responseLBS status200 [("Content-Type", "text/plain")] $
             LT.encodeUtf8 i
   in
-  FileExtListener $ tell $
+  FileExtListenerT $ tell $
     FileExts [(Text, r)]
 --
 -- blaze :: Html -> Response

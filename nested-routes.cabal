@@ -21,6 +21,7 @@ Library
                       , wai-extra
                       , http-types
                       , mtl
+                      , transformers
                       , semigroups
                       , pseudo-trie
                       , text
