@@ -7,6 +7,7 @@
 module Web.Routes.Nested.FileExtListener where
 
 import qualified Data.Aeson              as A
+import qualified Data.Text               as T
 import qualified Data.Text.Lazy          as LT
 import qualified Data.Text.Lazy.Encoding as LT
 import           Network.HTTP.Types      (status200)
@@ -18,7 +19,7 @@ import           Control.Monad.Writer
 import           Data.Monoid
 import           Data.Map.Lazy
 import           Data.Traversable
-import           Data.Foldable
+import           Data.Foldable hiding (elem)
 
 
 data FileExt = Html
@@ -26,10 +27,11 @@ data FileExt = Html
              | Text
   deriving (Show, Eq, Ord)
 
-possibleExts :: FileExt -> [String]
-possibleExts Html = ["", ".htm", ".html"]
-possibleExts Json = [".json"]
-possibleExts Text = [".txt"]
+possibleExts :: T.Text -> Maybe FileExt
+possibleExts x | x `elem` ["", ".htm", ".html"] = Just Html
+               | x `elem` [".json"]             = Just Json
+               | x `elem` [".txt"]              = Just Text
+               | otherwise                      = Nothing
 
 newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
   deriving (Show, Eq, Functor, Traversable)
@@ -37,16 +39,6 @@ newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
 deriving instance Monoid      (FileExts a)
 deriving instance Foldable     FileExts
 
--- | Sorting instance
--- instance Monoid (FileExts a) where
---   mempty = FileExts []
---   (FileExts []) `mappend` ys = ys
---   xs `mappend` (FileExts []) = xs
---   (FileExts (x'@(x,a):xs)) `mappend` (FileExts (y'@(y,b):ys))
---     | x < y = FileExts $ x' : xs `mappend` (y':ys)
---     | x > y = FileExts $ y' : (x':xs) `mappend` ys
---     | x == y = FileExts $ y' : xs `mappend` ys
---     | otherwise = error "unordered merge?"
 
 newtype FileExtListenerT r m a =
   FileExtListenerT { runFileExtListenerT :: WriterT (FileExts r) m a }
@@ -58,11 +50,6 @@ deriving instance MonadIO m =>     MonadIO     (FileExtListenerT r m)
 deriving instance                  MonadTrans  (FileExtListenerT r)
 
 
--- TODO: Propogate constraints to bottom-level of dual-written expression
--- TODO: Overload sub-expressions to be bottom-level if contextually inside
--- a wrapper, or mid-level if itself is wrapper
--- TODO: key (1,2) is ordered (and organized) by outer/inner expression -
--- optimization for content-type vs. verb is up to end user.
 json :: (A.ToJSON j, Monad m) =>
         j
      -> FileExtListenerT Response m ()

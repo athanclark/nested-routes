@@ -42,9 +42,9 @@ deriving instance MonadIO m =>     MonadIO     (VerbListenerT r m)
 deriving instance                  MonadTrans  (VerbListenerT r)
 
 
--- get :: (Monad m) =>
---        FileExtListenerT Response m ()
---     -> VerbListenerT (FileExts Response) m ()
+get :: (Monad m) =>
+       FileExtListenerT Response m a
+    -> VerbListenerT Response m ()
 get flistener = do
   (fileexts :: FileExts Response) <-
       lift $ execWriterT $ runFileExtListenerT flistener
