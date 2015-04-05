@@ -28,6 +28,8 @@ Library
                       , text
                       , aeson
                       , blaze-html
+                      , lucid
+                      , bytestring
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0

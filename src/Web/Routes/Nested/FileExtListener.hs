@@ -10,9 +10,12 @@ import qualified Data.Aeson              as A
 import qualified Data.Text               as T
 import qualified Data.Text.Lazy          as LT
 import qualified Data.Text.Lazy.Encoding as LT
+import qualified Data.ByteString.Lazy    as B
+import qualified Data.ByteString.Builder as BU
 import qualified Text.Blaze.Html         as H
 import qualified Text.Blaze.Html.Renderer.Text as H
-import           Network.HTTP.Types      (status200)
+import qualified Lucid.Base              as L
+import           Network.HTTP.Types      (status200, RequestHeaders)
 import           Network.Wai
 
 import           Control.Applicative
@@ -92,14 +95,29 @@ blaze i =
   FileExtListenerT $ tell $
     FileExts $ singleton Html r
 
--- lucid :: Monad m => HtmlT m () -> Response
--- lucid = L.renderTextT
 
--- builder :: Builder -> Response
--- builder = responseBuilder
---
--- bytestring :: B.ByteString -> Response
--- bytestring = lazy-bytestring . LB.fromStrict
---
--- lazy-bytestring :: LB.ByteString -> Response
--- lazy-bytestring = responseLBS
+lucid :: (Monad m) =>
+         L.HtmlT m () -> FileExtListenerT Response m ()
+lucid i = do
+  i' <- lift $ L.renderBST i
+  let r = responseLBS status200 [("Content-Type", "text/html")] $ i'
+  FileExtListenerT $ tell $
+    FileExts $ singleton Html r
+
+
+builder :: (Monad m) =>
+           BU.Builder -> RequestHeaders
+        -> FileExt -> FileExtListenerT Response m ()
+builder i hs e =
+  let r = responseBuilder status200 hs i in
+  FileExtListenerT $ tell $
+    FileExts $ singleton e r
+
+
+bytestring :: (Monad m) =>
+              B.ByteString -> RequestHeaders
+           -> FileExt -> FileExtListenerT Response m ()
+bytestring i hs e =
+  let r = responseLBS status200 hs i in
+  FileExtListenerT $ tell $
+    FileExts $ singleton e r
