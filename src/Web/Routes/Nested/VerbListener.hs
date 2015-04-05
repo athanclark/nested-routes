@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -25,7 +26,7 @@ data Verb = Get
           | Delete
   deriving (Show, Eq, Ord)
 
-newtype Verbs a = Verbs { unVerbs :: Map (FileExt, Verb) a }
+newtype Verbs a = Verbs { unVerbs :: Map Verb (FileExts a) }
   deriving (Show, Eq, Functor, Traversable)
 
 deriving instance Monoid      (Verbs a)
@@ -46,10 +47,9 @@ get :: (Monad m) =>
        FileExtListenerT Response m a
     -> VerbListenerT Response m ()
 get flistener = do
-  (fileexts :: FileExts Response) <-
-      lift $ execWriterT $ runFileExtListenerT flistener
-  let new = foldrWithKey (\k -> insert (k, Get)) empty $ unFileExts fileexts
-
+  (fileexts :: FileExts Response) <- lift $ execWriterT $
+                                     runFileExtListenerT flistener
+  let new = singleton Get fileexts
   VerbListenerT $ tell $ Verbs $ new
 
 -- post :: MonadIO m =>

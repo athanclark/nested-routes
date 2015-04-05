@@ -27,11 +27,16 @@ data FileExt = Html
              | Text
   deriving (Show, Eq, Ord)
 
+
 possibleExts :: T.Text -> Maybe FileExt
-possibleExts x | x `elem` ["", ".htm", ".html"] = Just Html
-               | x `elem` [".json"]             = Just Json
-               | x `elem` [".txt"]              = Just Text
-               | otherwise                      = Nothing
+possibleExts x | x `elem` htmls = Just Html
+               | x `elem` jsons = Just Json
+               | x `elem` texts = Just Text
+               | otherwise      = Nothing
+  where
+    htmls = ["", ".htm", ".html"]
+    jsons = [".json"]
+    texts = [".txt"]
 
 newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
   deriving (Show, Eq, Functor, Traversable)
@@ -55,20 +60,20 @@ json :: (A.ToJSON j, Monad m) =>
      -> FileExtListenerT Response m ()
 json i =
   let r = responseLBS status200 [("Content-Type", "application/json")] $
-            A.encode i
-  in
+            A.encode i in
   FileExtListenerT $ tell $
     FileExts $ singleton Json r
+
 
 jsonp :: (A.ToJSON j, Monad m) =>
          j
       -> FileExtListenerT Response m ()
 jsonp i =
   let r = responseLBS status200 [("Content-Type", "application/javascript")] $
-            A.encode i
-  in
+            A.encode i in
   FileExtListenerT $ tell $
     FileExts $ singleton Json r
+
 
 text :: (Monad m) =>
         LT.Text
@@ -79,10 +84,11 @@ text i =
   in
   FileExtListenerT $ tell $
     FileExts $ singleton Text r
---
+
+
 -- blaze :: Html -> Response
 -- blaze = HR.renderHtml
---
+
 -- lucid :: Monad m => HtmlT m () -> Response
 -- lucid = L.renderTextT
 

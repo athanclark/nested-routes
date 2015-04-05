@@ -6,7 +6,12 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE OverloadedStrings          #-}
 
-module Web.Routes.Nested where
+module Web.Routes.Nested
+  ( module Web.Routes.Nested.FileExtListener
+  , module Web.Routes.Nested.VerbListener
+  , handle
+  , route
+  ) where
 
 import           Web.Routes.Nested.FileExtListener
 import           Web.Routes.Nested.VerbListener
@@ -28,6 +33,8 @@ import qualified Data.Trie.Rooted                  as R
 import           Data.Traversable
 import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
+import Debug.Trace (traceShow)
+
 
 newtype HandlerT m a = HandlerT
   { runHandler :: WriterT (MergeRooted T.Text (Verbs Response)) m a }
@@ -57,13 +64,17 @@ route :: (Functor m, Monad m) =>
 route h req respond = do
   trie <- unMergeRooted <$> (execWriterT $ runHandler h)
   let mMethod = httpMethodToMSym $ requestMethod req
-      mFileext = possibleExts $ T.pack $ getFileExt $
-                                T.unpack $ last $ pathInfo req
+      mFileext = case pathInfo req of
+                   [] -> Just Html
+                   xs -> possibleExts $ T.pack $ getFileExt $
+                                        T.unpack $ last xs
 
   case (mFileext, mMethod) of
-    (Just f, Just m) -> case R.lookup (pathInfo req) trie of
-      Just map -> case M.lookup (f,m) $ unVerbs map of
-        Just r  -> respond r
+    (Just f, Just v) -> case R.lookup (pathInfo req) trie of
+      Just vmap -> case M.lookup v $ unVerbs vmap of
+        Just fmap -> case M.lookupGE f $ unFileExts fmap of
+          Just (_,r) -> respond r
+          Nothing -> respond notFound
         Nothing -> respond notFound
       Nothing  -> respond notFound
     _ -> respond notFound
