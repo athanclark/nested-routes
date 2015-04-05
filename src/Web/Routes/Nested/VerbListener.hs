@@ -18,6 +18,7 @@ import           Data.Monoid
 import           Data.Foldable
 import           Data.Traversable
 import           Data.Map.Lazy
+import qualified Data.ByteString                   as B
 
 
 data Verb = Get
@@ -52,15 +53,23 @@ get flistener = do
   let new = singleton Get fileexts
   VerbListenerT $ tell $ Verbs $ new
 
--- post :: MonadIO m =>
+-- post :: (Monad m, MonadIO m) =>
 --         (ByteString -> m ())
---      -> FileExtListener ()
---      -> VerbListener ()
--- post fl =
+--      -> FileExtListenerT Response m a
+--      -> VerbListenerT Response m ()
+-- post handle fl = do
+--   rbody <- getUntilM (== B.empty) $ requestBody
 --   VerbListener $ tell $
 --     Verbs [(Post, fl)]
 --
--- put :: MonadIO m =>
+--   where
+--    getUntilM p ma = do
+--      a <- ma
+--      if p a then return a
+--             else do b <- getUntilM p ma
+--                     a <> b
+
+-- put :: (Monad m, MonadIO m) =>
 --        (ByteString -> m ())
 --     -> FileExtListener ()
 --     -> VerbListener ()
@@ -68,9 +77,11 @@ get flistener = do
 --   VerbListener $ tell $
 --     Verbs [(Put, fl)]
 
--- delete :: (Monad m) =>
---           FileExtListenerT m ()
---        -> VerbListenerT m ()
--- delete fl =
---   VerbListenerT $ tell $
---     Verbs [(Post, fl)]
+delete :: (Monad m) =>
+          FileExtListenerT Response m a
+       -> VerbListenerT Response m ()
+delete flistener = do
+  (fileexts :: FileExts Response) <- lift $ execWriterT $
+                                     runFileExtListenerT flistener
+  let new = singleton Delete fileexts
+  VerbListenerT $ tell $ Verbs $ new
