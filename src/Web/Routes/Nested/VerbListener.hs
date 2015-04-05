@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -9,10 +10,13 @@ import           Web.Routes.Nested.FileExtListener
 
 import           Network.Wai
 
-import           Control.Applicative
+import           Control.Applicative hiding (empty)
 import           Control.Monad.Trans
 import           Control.Monad.Writer
 import           Data.Monoid
+import           Data.Foldable
+import           Data.Traversable
+import           Data.Map.Lazy
 
 
 data Verb = Get
@@ -21,38 +25,32 @@ data Verb = Get
           | Delete
   deriving (Show, Eq, Ord)
 
-newtype Verbs a = Verbs { unVerbs :: [(Verb, a)] }
-  deriving (Show, Eq, Functor)
+newtype Verbs a = Verbs { unVerbs :: Map (FileExt, Verb) a }
+  deriving (Show, Eq, Functor, Traversable)
 
--- | Sorting instance
-instance Monoid (Verbs a) where
-  mempty = Verbs []
-  (Verbs []) `mappend` ys = ys
-  xs `mappend` (Verbs []) = xs
-  (Verbs (x'@(x,a):xs)) `mappend` (Verbs (y'@(y,b):ys))
-    | x < y = Verbs $ x' : xs `mappend` (y':ys)
-    | x > y = Verbs $ y' : (x':xs) `mappend` ys
-    | x == y = Verbs $ y' : xs `mappend` ys
-    | otherwise = error "unordered merge?"
-
-newtype VerbListenerT m a = VerbListenerT
-  { runVerbListenerT :: WriterT (Verbs (FileExts Response)) m a }
-  deriving (Functor)
-
-deriving instance Applicative m => Applicative (VerbListenerT m)
-deriving instance Monad m =>       Monad       (VerbListenerT m)
-deriving instance MonadIO m =>     MonadIO     (VerbListenerT m)
-deriving instance                  MonadTrans   VerbListenerT
+deriving instance Monoid      (Verbs a)
+deriving instance Foldable     Verbs
 
 
-get :: (Monad m) =>
-       FileExtListenerT m ()
-    -> VerbListenerT m ()
+newtype VerbListenerT r m a =
+  VerbListenerT { runVerbListenerT :: WriterT (Verbs r) m a }
+    deriving (Functor)
+
+deriving instance Applicative m => Applicative (VerbListenerT r m)
+deriving instance Monad m =>       Monad       (VerbListenerT r m)
+deriving instance MonadIO m =>     MonadIO     (VerbListenerT r m)
+deriving instance                  MonadTrans  (VerbListenerT r)
+
+
+-- get :: (Monad m) =>
+--        FileExtListenerT Response m ()
+--     -> VerbListenerT (FileExts Response) m ()
 get flistener = do
-  (fileexts :: FileExts Response) <- lift $
-            execWriterT $ runFileExtListenerT flistener
-  VerbListenerT $ tell $
-    Verbs [(Get, fileexts)]
+  (fileexts :: FileExts Response) <-
+      lift $ execWriterT $ runFileExtListenerT flistener
+  let new = foldrWithKey (\k -> insert (k, Get)) empty $ unFileExts fileexts
+
+  VerbListenerT $ tell $ Verbs $ new
 
 -- post :: MonadIO m =>
 --         (ByteString -> m ())

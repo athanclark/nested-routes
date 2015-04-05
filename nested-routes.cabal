@@ -23,6 +23,7 @@ Library
                       , mtl
                       , transformers
                       , semigroups
+                      , containers
                       , pseudo-trie
                       , text
                       , aeson

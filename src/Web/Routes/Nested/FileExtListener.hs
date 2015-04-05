@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -15,6 +16,9 @@ import           Control.Applicative
 import           Control.Monad.Trans
 import           Control.Monad.Writer
 import           Data.Monoid
+import           Data.Map.Lazy
+import           Data.Traversable
+import           Data.Foldable
 
 
 data FileExt = Html
@@ -22,62 +26,72 @@ data FileExt = Html
              | Text
   deriving (Show, Eq, Ord)
 
-newtype FileExts a = FileExts { unFileExts :: [(FileExt, a)] }
-  deriving (Functor)
+possibleExts :: FileExt -> [String]
+possibleExts Html = ["", ".htm", ".html"]
+possibleExts Json = [".json"]
+possibleExts Text = [".txt"]
+
+newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
+  deriving (Show, Eq, Functor, Traversable)
+
+deriving instance Monoid      (FileExts a)
+deriving instance Foldable     FileExts
 
 -- | Sorting instance
-instance Monoid (FileExts a) where
-  mempty = FileExts []
-  (FileExts []) `mappend` ys = ys
-  xs `mappend` (FileExts []) = xs
-  (FileExts (x'@(x,a):xs)) `mappend` (FileExts (y'@(y,b):ys))
-    | x < y = FileExts $ x' : xs `mappend` (y':ys)
-    | x > y = FileExts $ y' : (x':xs) `mappend` ys
-    | x == y = FileExts $ y' : xs `mappend` ys
-    | otherwise = error "unordered merge?"
+-- instance Monoid (FileExts a) where
+--   mempty = FileExts []
+--   (FileExts []) `mappend` ys = ys
+--   xs `mappend` (FileExts []) = xs
+--   (FileExts (x'@(x,a):xs)) `mappend` (FileExts (y'@(y,b):ys))
+--     | x < y = FileExts $ x' : xs `mappend` (y':ys)
+--     | x > y = FileExts $ y' : (x':xs) `mappend` ys
+--     | x == y = FileExts $ y' : xs `mappend` ys
+--     | otherwise = error "unordered merge?"
 
-newtype FileExtListenerT m a = FileExtListenerT
-  { runFileExtListenerT :: WriterT (FileExts Response) m a }
-  deriving (Functor)
+newtype FileExtListenerT r m a =
+  FileExtListenerT { runFileExtListenerT :: WriterT (FileExts r) m a }
+    deriving (Functor)
 
-deriving instance Applicative m => Applicative (FileExtListenerT m)
-deriving instance Monad m =>       Monad       (FileExtListenerT m)
-deriving instance MonadIO m =>     MonadIO     (FileExtListenerT m)
-deriving instance                  MonadTrans   FileExtListenerT
+deriving instance Applicative m => Applicative (FileExtListenerT r m)
+deriving instance Monad m =>       Monad       (FileExtListenerT r m)
+deriving instance MonadIO m =>     MonadIO     (FileExtListenerT r m)
+deriving instance                  MonadTrans  (FileExtListenerT r)
 
--- html :: VerbListener () -> FileExtListener ()
--- html vl = FileExtListener $ tell $
---     FileExts [(Html, vl)]
 
+-- TODO: Propogate constraints to bottom-level of dual-written expression
+-- TODO: Overload sub-expressions to be bottom-level if contextually inside
+-- a wrapper, or mid-level if itself is wrapper
+-- TODO: key (1,2) is ordered (and organized) by outer/inner expression -
+-- optimization for content-type vs. verb is up to end user.
 json :: (A.ToJSON j, Monad m) =>
         j
-     -> FileExtListenerT m ()
+     -> FileExtListenerT Response m ()
 json i =
   let r = responseLBS status200 [("Content-Type", "application/json")] $
             A.encode i
   in
   FileExtListenerT $ tell $
-    FileExts [(Json, r)]
+    FileExts $ singleton Json r
 
 jsonp :: (A.ToJSON j, Monad m) =>
          j
-      -> FileExtListenerT m ()
+      -> FileExtListenerT Response m ()
 jsonp i =
   let r = responseLBS status200 [("Content-Type", "application/javascript")] $
             A.encode i
   in
   FileExtListenerT $ tell $
-    FileExts [(Json, r)]
+    FileExts $ singleton Json r
 
 text :: (Monad m) =>
         LT.Text
-     -> FileExtListenerT m ()
+     -> FileExtListenerT Response m ()
 text i =
   let r = responseLBS status200 [("Content-Type", "text/plain")] $
             LT.encodeUtf8 i
   in
   FileExtListenerT $ tell $
-    FileExts [(Text, r)]
+    FileExts $ singleton Text r
 --
 -- blaze :: Html -> Response
 -- blaze = HR.renderHtml
