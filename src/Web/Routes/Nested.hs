@@ -33,7 +33,6 @@ import qualified Data.Trie.Rooted                  as R
 import           Data.Traversable
 import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
-import Debug.Trace (traceShow)
 
 
 newtype HandlerT m a = HandlerT
@@ -66,28 +65,41 @@ route h req respond = do
   let mMethod = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
                    [] -> Just Html
-                   xs -> possibleExts $ T.pack $ getFileExt $
-                                        T.unpack $ last xs
+                   xs -> possibleExts $ getFileExt $ last xs
 
   case (mFileext, mMethod) of
-    (Just f, Just v) -> case R.lookup (pathInfo req) trie of
+    (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt (pathInfo req) in
+                        case R.lookup cleanedPathInfo trie of
       Just vmap -> case M.lookup v $ unVerbs vmap of
-        Just fmap -> case M.lookupGE f $ unFileExts fmap of
-          Just (_,r) -> respond r
+        Just femap -> case lookupMin f $ unFileExts femap of
+          Just r  -> respond r
           Nothing -> respond notFound
         Nothing -> respond notFound
       Nothing  -> respond notFound
     _ -> respond notFound
 
   where
-    getFileExt :: String -> String
-    getFileExt s = case foldr go Nothing s of
-                     Nothing -> ""
-                     Just x  -> x
+    lookupMin k map | all (k <) (M.keys map) = M.lookup (minimum $ M.keys map) map
+                    | otherwise              = M.lookup k map
+
+    getFileExt :: T.Text -> T.Text
+    getFileExt s =
+      let mfound = foldl go Nothing $ T.unpack s in
+      case mfound of
+        Nothing -> T.pack ""
+        Just x  -> T.pack x
       where
-        go '.' _         = Just "."
-        go x   (Just xs) = Just $ xs ++ [x]
-        go x   Nothing   = Nothing
+        go Nothing x | x == '.'  = Just "."
+                     | otherwise = Nothing
+        go (Just xs) x = Just $ xs ++ [x]
+
+    applyToLast :: (a -> a) -> [a] -> [a]
+    applyToLast f [] = []
+    applyToLast f (x:[]) = f x : []
+    applyToLast f (x:xs) = x : applyToLast f xs
+
+    trimFileExt :: T.Text -> T.Text
+    trimFileExt s = T.pack $ takeWhile (/= '.') $ T.unpack s
 
     httpMethodToMSym :: Method -> Maybe Verb
     httpMethodToMSym x | x == methodGet    = Just Get

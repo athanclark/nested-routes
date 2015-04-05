@@ -27,6 +27,7 @@ Library
                       , pseudo-trie >= 0.0.4
                       , text
                       , aeson
+                      , blaze-html
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0

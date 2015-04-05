@@ -10,6 +10,8 @@ import qualified Data.Aeson              as A
 import qualified Data.Text               as T
 import qualified Data.Text.Lazy          as LT
 import qualified Data.Text.Lazy.Encoding as LT
+import qualified Text.Blaze.Html         as H
+import qualified Text.Blaze.Html.Renderer.Text as H
 import           Network.HTTP.Types      (status200)
 import           Network.Wai
 
@@ -56,8 +58,7 @@ deriving instance                  MonadTrans  (FileExtListenerT r)
 
 
 json :: (A.ToJSON j, Monad m) =>
-        j
-     -> FileExtListenerT Response m ()
+        j -> FileExtListenerT Response m ()
 json i =
   let r = responseLBS status200 [("Content-Type", "application/json")] $
             A.encode i in
@@ -66,8 +67,7 @@ json i =
 
 
 jsonp :: (A.ToJSON j, Monad m) =>
-         j
-      -> FileExtListenerT Response m ()
+         j -> FileExtListenerT Response m ()
 jsonp i =
   let r = responseLBS status200 [("Content-Type", "application/javascript")] $
             A.encode i in
@@ -76,31 +76,25 @@ jsonp i =
 
 
 text :: (Monad m) =>
-        LT.Text
-     -> FileExtListenerT Response m ()
+        LT.Text -> FileExtListenerT Response m ()
 text i =
   let r = responseLBS status200 [("Content-Type", "text/plain")] $
-            LT.encodeUtf8 i
-  in
+            LT.encodeUtf8 i in
   FileExtListenerT $ tell $
     FileExts $ singleton Text r
 
 
--- blaze :: Html -> Response
--- blaze = HR.renderHtml
+blaze :: (Monad m ) =>
+         H.Html -> FileExtListenerT Response m ()
+blaze i =
+  let r = responseLBS status200 [("Content-Type", "text/html")] $
+            LT.encodeUtf8 $ H.renderHtml i in
+  FileExtListenerT $ tell $
+    FileExts $ singleton Html r
 
 -- lucid :: Monad m => HtmlT m () -> Response
 -- lucid = L.renderTextT
 
--- json :: ToJSON a => a -> Response
--- json = lazy-bytestring . encode
-
--- text :: T.Text -> Response
--- text = bytestring . TR.encodeUtf8
-
--- lazy-text :: LT.Text -> Response
--- lazy-text = lazy-bytestring . LTR.encodeUtf8
---
 -- builder :: Builder -> Response
 -- builder = responseBuilder
 --
