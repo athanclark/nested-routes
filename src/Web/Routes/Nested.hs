@@ -50,8 +50,9 @@ instance MonadTrans (HandlerT z) where
 handle :: Monad m =>
           [T.Text]
        -> VerbListenerT z Response m ()
+       -> [HandlerT z m ()]
        -> HandlerT z m ()
-handle ts vl = do
+handle ts vl childs = do
   vfrs <- lift $ execWriterT $ runVerbListenerT vl
 
   HandlerT $ tell $

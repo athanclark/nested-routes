@@ -31,8 +31,6 @@ data Verb = Get
 newtype Verbs z m r = Verbs { unVerbs :: Map Verb (Maybe (ReaderT BL.ByteString m z), FileExts r) }
   deriving (Functor, Traversable)
 
--- deriving instance Applicative m => Applicative (Verbs z m)
--- deriving instance Monad m =>       Monad       (Verbs z m)
 deriving instance                  Monoid    (Verbs z m a)
 deriving instance                  Foldable  (Verbs z m)
 
