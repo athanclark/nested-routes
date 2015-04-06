@@ -35,20 +35,20 @@ import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
 
 
-newtype HandlerT m a = HandlerT
-  { runHandler :: WriterT (MergeRooted T.Text (Verbs Response)) m a }
+newtype HandlerT z m a = HandlerT
+  { runHandler :: WriterT (MergeRooted T.Text (Verbs z Response)) m a }
   deriving (Functor)
 
-deriving instance Applicative m => Applicative (HandlerT m)
-deriving instance Monad m =>       Monad       (HandlerT m)
-deriving instance MonadIO m =>     MonadIO     (HandlerT m)
-deriving instance                  MonadTrans   HandlerT
+deriving instance Applicative m => Applicative (HandlerT z m)
+deriving instance Monad m =>       Monad       (HandlerT z m)
+deriving instance MonadIO m =>     MonadIO     (HandlerT z m)
+deriving instance                  MonadTrans  (HandlerT z)
 
 
 handle :: Monad m =>
           [T.Text]
-       -> VerbListenerT Response m ()
-       -> HandlerT m ()
+       -> VerbListenerT z Response m ()
+       -> HandlerT z m ()
 handle ts vl = do
   vfrs <- lift $ execWriterT $ runVerbListenerT vl
 
@@ -57,8 +57,8 @@ handle ts vl = do
       [] -> MergeRooted $ Rooted (Just vfrs) []
       _  -> MergeRooted $ Rooted Nothing [Rest (NE.fromList ts) vfrs]
 
-route :: (Functor m, Monad m) =>
-         HandlerT m a
+route :: (Functor m, Monad m, MonadIO m) =>
+         HandlerT z m a
       -> Request -> (Response -> m b) -> m b
 route h req respond = do
   trie <- unMergeRooted <$> (execWriterT $ runHandler h)
@@ -71,9 +71,16 @@ route h req respond = do
     (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt (pathInfo req) in
                         case R.lookup cleanedPathInfo trie of
       Just vmap -> case M.lookup v $ unVerbs vmap of
-        Just femap -> case lookupMin f $ unFileExts femap of
-          Just r  -> respond r
-          Nothing -> respond notFound
+        Just (mreqbodyf,femap) ->
+          case lookupMin f $ unFileExts femap of
+            Just r -> do
+              case mreqbodyf of
+                Nothing    -> respond r
+                Just reqbf -> do
+                  body <- liftIO $ strictRequestBody req
+                  return $ reqbf body
+                  respond r
+            Nothing -> respond notFound
         Nothing -> respond notFound
       Nothing  -> respond notFound
     _ -> respond notFound
