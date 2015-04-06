@@ -54,29 +54,27 @@ get flistener = do
   let new = singleton Get (Nothing, fileexts)
   VerbListenerT $ tell $ Verbs new
 
--- post :: (Monad m, MonadIO m) =>
---         (ByteString -> m ())
---      -> FileExtListenerT Response m a
---      -> VerbListenerT Response m ()
--- post handle fl = do
---   rbody <- getUntilM (== B.empty) $ requestBody
---   VerbListener $ tell $
---     Verbs [(Post, fl)]
---
---   where
---    getUntilM p ma = do
---      a <- ma
---      if p a then return a
---             else do b <- getUntilM p ma
---                     a <> b
 
--- put :: (Monad m, MonadIO m) =>
---        (ByteString -> m ())
---     -> FileExtListener ()
---     -> VerbListener ()
--- put fl =
---   VerbListener $ tell $
---     Verbs [(Put, fl)]
+post :: (Monad m, MonadIO m) =>
+        (BL.ByteString -> z)
+     -> FileExtListenerT Response m a
+     -> VerbListenerT z Response m ()
+post handle flistener = do
+  (fileexts :: FileExts Response) <- lift $ execWriterT $
+                                     runFileExtListenerT flistener
+  let new = singleton Post (Just handle, fileexts)
+  VerbListenerT $ tell $ Verbs new
+
+
+put :: (Monad m, MonadIO m) =>
+       (BL.ByteString -> z)
+    -> FileExtListenerT Response m a
+    -> VerbListenerT z Response m ()
+put handle flistener = do
+  (fileexts :: FileExts Response) <- lift $ execWriterT $
+                                     runFileExtListenerT flistener
+  let new = singleton Put (Just handle, fileexts)
+  VerbListenerT $ tell $ Verbs new
 
 delete :: (Monad m) =>
           FileExtListenerT Response m a
