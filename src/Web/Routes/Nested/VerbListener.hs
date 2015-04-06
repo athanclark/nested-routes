@@ -14,6 +14,7 @@ import           Network.Wai
 import           Control.Applicative hiding (empty)
 import           Control.Monad.Trans
 import           Control.Monad.Writer
+import           Control.Monad.Reader
 import           Data.Monoid
 import           Data.Foldable
 import           Data.Traversable
@@ -27,22 +28,23 @@ data Verb = Get
           | Delete
   deriving (Show, Eq, Ord)
 
-type ReqBodyT z = BL.ByteString -> z
-
-newtype Verbs z a = Verbs { unVerbs :: Map Verb (Maybe (ReqBodyT z), FileExts a) }
+newtype Verbs z m r = Verbs { unVerbs :: Map Verb (Maybe (ReaderT BL.ByteString m z), FileExts r) }
   deriving (Functor, Traversable)
 
-deriving instance             Monoid    (Verbs z a)
-deriving instance             Foldable  (Verbs z)
+-- deriving instance Applicative m => Applicative (Verbs z m)
+-- deriving instance Monad m =>       Monad       (Verbs z m)
+deriving instance                  Monoid    (Verbs z m a)
+deriving instance                  Foldable  (Verbs z m)
 
 newtype VerbListenerT z r m a =
-  VerbListenerT { runVerbListenerT :: WriterT (Verbs z r) m a }
+  VerbListenerT { runVerbListenerT :: WriterT (Verbs z m r) m a }
     deriving (Functor)
 
 deriving instance Applicative m => Applicative (VerbListenerT z r m)
 deriving instance Monad m =>       Monad       (VerbListenerT z r m)
 deriving instance MonadIO m =>     MonadIO     (VerbListenerT z r m)
-deriving instance                  MonadTrans  (VerbListenerT z r)
+instance MonadTrans (VerbListenerT z r) where
+  lift ma = VerbListenerT $ lift ma
 
 
 get :: (Monad m) =>
@@ -56,25 +58,26 @@ get flistener = do
 
 
 post :: (Monad m, MonadIO m) =>
-        (BL.ByteString -> z)
+        (BL.ByteString -> m z)
      -> FileExtListenerT Response m a
      -> VerbListenerT z Response m ()
 post handle flistener = do
   (fileexts :: FileExts Response) <- lift $ execWriterT $
                                      runFileExtListenerT flistener
-  let new = singleton Post (Just handle, fileexts)
+  let new = singleton Post (Just $ ReaderT handle, fileexts)
   VerbListenerT $ tell $ Verbs new
 
 
 put :: (Monad m, MonadIO m) =>
-       (BL.ByteString -> z)
+       (BL.ByteString -> m z)
     -> FileExtListenerT Response m a
     -> VerbListenerT z Response m ()
 put handle flistener = do
   (fileexts :: FileExts Response) <- lift $ execWriterT $
                                      runFileExtListenerT flistener
-  let new = singleton Put (Just handle, fileexts)
+  let new = singleton Put (Just $ ReaderT handle, fileexts)
   VerbListenerT $ tell $ Verbs new
+
 
 delete :: (Monad m) =>
           FileExtListenerT Response m a

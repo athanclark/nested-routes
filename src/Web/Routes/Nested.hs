@@ -25,6 +25,7 @@ import           Control.Arrow                     (second, first, (***))
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Writer
+import           Control.Monad.Reader
 import qualified Data.List.NonEmpty                as NE
 import           Data.Monoid
 import           Data.Trie.Pseudo
@@ -36,13 +37,14 @@ import qualified Data.Map.Lazy                     as M
 
 
 newtype HandlerT z m a = HandlerT
-  { runHandler :: WriterT (MergeRooted T.Text (Verbs z Response)) m a }
+  { runHandler :: WriterT (MergeRooted T.Text (Verbs z m Response)) m a }
   deriving (Functor)
 
 deriving instance Applicative m => Applicative (HandlerT z m)
 deriving instance Monad m =>       Monad       (HandlerT z m)
 deriving instance MonadIO m =>     MonadIO     (HandlerT z m)
-deriving instance                  MonadTrans  (HandlerT z)
+instance MonadTrans (HandlerT z) where
+  lift ma = HandlerT $ lift ma
 
 
 handle :: Monad m =>
@@ -78,7 +80,7 @@ route h req respond = do
                 Nothing    -> respond r
                 Just reqbf -> do
                   body <- liftIO $ strictRequestBody req
-                  return $ reqbf body
+                  (runReaderT $ reqbf) body
                   respond r
             Nothing -> respond notFound
         Nothing -> respond notFound
