@@ -16,7 +16,6 @@ router = route $ do
   handle [] -- root
     (get $ do
       text "woo!"
-      json ("wheeeee" :: T.Text))
     [ handle ["wat","the","heck"]
         (get $
           text "idk man, I'm just here for the beer")
@@ -36,6 +35,23 @@ router = route $ do
     ]
 ```
 
+```bash
+curl localhost:3000/
+
+↪ woo!
+
+curl localhost:3000/foo
+
+↪ foo
+
+curl localhost:3000/foo/bar
+
+↪ bar-orgraphy
+
+curl localhost:3000/foo/bar.json
+
+↪ {book: "barography"}
+```
 
 ## Installation
 
