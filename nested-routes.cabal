@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                0.0.2
+Version:                0.0.3
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -24,7 +24,7 @@ Library
                       , transformers
                       , semigroups
                       , containers
-                      , pseudo-trie >= 0.0.4
+                      , pseudo-trie >= 0.0.4.2
                       , text
                       , aeson
                       , blaze-html
