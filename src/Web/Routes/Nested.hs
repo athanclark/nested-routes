@@ -36,10 +36,11 @@ import           Data.Traversable
 import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
 import qualified Data.ByteString.Lazy              as BL
+import           Data.Maybe                        (fromMaybe)
 
 
 newtype HandlerT z m a = HandlerT
-  { runHandler :: WriterT (MergeRooted T.Text (Verbs z m Response)) m a }
+  { runHandler :: WriterT (MergeRooted T.Text (Verbs z m Response), FileExts Response) m a }
   deriving (Functor)
 
 deriving instance Applicative m => Applicative (HandlerT z m)
@@ -51,55 +52,64 @@ instance MonadTrans (HandlerT z) where
 
 -- | Add a path to the list of routes
 handle :: Monad m =>
-          [T.Text] -- ^ Input path, separated by slashes
+          [T.Text]                      -- ^ Input path, separated by slashes
        -> VerbListenerT z Response m () -- ^ HTTP Method-oriented monad
-       -> [HandlerT z m ()] -- ^ Child paths
+       -> [HandlerT z m ()]             -- ^ Child paths
        -> HandlerT z m ()
 handle ts vl [] = do
   vfrs <- lift $ execWriterT $ runVerbListenerT vl
 
   HandlerT $ tell $
     case ts of
-      [] -> MergeRooted $ Rooted (Just vfrs) []
-      _  -> MergeRooted $ Rooted Nothing [Rest (NE.fromList ts) vfrs]
+      [] -> (MergeRooted $ Rooted (Just vfrs) [],                       mempty)
+      _  -> (MergeRooted $ Rooted Nothing [Rest (NE.fromList ts) vfrs], mempty)
 handle ts vl cs = do
   vfrs <- lift $ execWriterT $ runVerbListenerT vl
-  child <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
 
   HandlerT $ tell $
     case ts of
       [] -> case unMergeRooted child of
-              Rooted _ xs -> MergeRooted $ Rooted (Just vfrs) xs
+              Rooted _ xs -> (MergeRooted $ Rooted (Just vfrs) xs, mempty)
       _  -> let child' = push (unMergeRooted child) $ NE.fromList ts in
-            MergeRooted $ Rooted Nothing [P.assign (NE.fromList ts) (Just vfrs) child']
+            (MergeRooted $ Rooted Nothing [P.assign (NE.fromList ts) (Just vfrs) child'], mempty)
+
+
+notFound :: Monad m =>
+            FileExtListenerT Response m ()
+         -> HandlerT z m ()
+notFound flistener = do
+  (fes :: FileExts Response) <- lift $ execWriterT $ runFileExtListenerT flistener
+  HandlerT $ tell (mempty, fes)
 
 
 -- | Turns a @HandlerT@ into a Wai @Application@
 route :: (Functor m, Monad m, MonadIO m) =>
-         Response -- ^ Response to give when not found in the router
-      -> HandlerT z m a -- ^ Assembled @handle@ calls
+         HandlerT z m a -- ^ Assembled @handle@ calls
       -> Request
       -> (Response -> m b) -> m b
-route notFound h req respond = do
-  trie <- unMergeRooted <$> (execWriterT $ runHandler h)
-  let mMethod = httpMethodToMSym $ requestMethod req
-      mFileext = case pathInfo req of
-                   [] -> Just Html
-                   xs -> possibleExts $ getFileExt $ last xs
+route h req respond = do
+  (rtrie, fes) <- execWriterT $ runHandler h
+  let trie        = unMergeRooted rtrie
+      notFoundMap = unFileExts fes
+      mMethod     = httpMethodToMSym $ requestMethod req
+      mFileext    = case pathInfo req of
+                      [] -> Just Html
+                      xs -> possibleExts $ getFileExt $ last xs
 
   case (mFileext, mMethod) of
     (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req in
                         case R.lookup cleanedPathInfo trie of
-      Just vmap -> continue f v vmap
+      Just vmap -> continue f v vmap notFoundMap
       Nothing  -> case trimFileExt $ last $ pathInfo req of
         "index" -> case R.lookup (init $ pathInfo req) trie of
-          Just vmap -> continue f v vmap
-          Nothing -> respond notFound
-        _       -> respond notFound
-    _ -> respond notFound
+          Just vmap -> continue f v vmap notFoundMap
+          Nothing -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+        _       -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+    _ -> respond $ fromMaybe plain404 $ lookupMin Html notFoundMap
 
   where
-    continue f v vmap = case M.lookup v $ unVerbs vmap of
+    continue f v vmap notFoundMap = case M.lookup v $ unVerbs vmap of
         Just (mreqbodyf,femap) ->
           case lookupMin f $ unFileExts femap of
             Just r -> do
@@ -115,10 +125,12 @@ route notFound h req respond = do
                                          then do body <- liftIO $ strictRequestBody req
                                                  (runReaderT $ reqbf) body
                                                  respond r
-                                         else respond notFound
-                    _ -> respond notFound
-            Nothing -> respond notFound
-        Nothing -> respond notFound
+                                         else respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+                    _ -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+            Nothing -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+        Nothing -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+
+    plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
     lookupMin k map | all (k <) (M.keys map) = M.lookup (minimum $ M.keys map) map
                     | otherwise              = M.lookup k map
