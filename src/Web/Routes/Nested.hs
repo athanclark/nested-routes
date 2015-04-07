@@ -49,10 +49,11 @@ instance MonadTrans (HandlerT z) where
   lift ma = HandlerT $ lift ma
 
 
+-- | Add a path to the list of routes
 handle :: Monad m =>
-          [T.Text]
-       -> VerbListenerT z Response m ()
-       -> [HandlerT z m ()]
+          [T.Text] -- ^ Input path, separated by slashes
+       -> VerbListenerT z Response m () -- ^ HTTP Method-oriented monad
+       -> [HandlerT z m ()] -- ^ Child paths
        -> HandlerT z m ()
 handle ts vl [] = do
   vfrs <- lift $ execWriterT $ runVerbListenerT vl
@@ -73,10 +74,13 @@ handle ts vl cs = do
             MergeRooted $ Rooted Nothing [P.assign (NE.fromList ts) (Just vfrs) child']
 
 
+-- | Turns a @HandlerT@ into a Wai @Application@
 route :: (Functor m, Monad m, MonadIO m) =>
-         HandlerT z m a
-      -> Request -> (Response -> m b) -> m b
-route h req respond = do
+         Response -- ^ Response to give when not found in the router
+      -> HandlerT z m a -- ^ Assembled @handle@ calls
+      -> Request
+      -> (Response -> m b) -> m b
+route notFound h req respond = do
   trie <- unMergeRooted <$> (execWriterT $ runHandler h)
   let mMethod = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
@@ -92,10 +96,18 @@ route h req respond = do
             Just r -> do
               case mreqbodyf of
                 Nothing    -> respond r
-                Just reqbf -> do
+                Just (reqbf,Nothing) -> do
                   body <- liftIO $ strictRequestBody req
                   (runReaderT $ reqbf) body
                   respond r
+                Just (reqbf,Just bl) -> do
+                  case requestBodyLength req of
+                    KnownLength bl' -> if bl' <= bl
+                                         then do body <- liftIO $ strictRequestBody req
+                                                 (runReaderT $ reqbf) body
+                                                 respond r
+                                         else respond notFound
+                    _ -> respond notFound
             Nothing -> respond notFound
         Nothing -> respond notFound
       Nothing  -> respond notFound
@@ -130,5 +142,3 @@ route h req respond = do
                        | x == methodPut    = Just Put
                        | x == methodDelete = Just Delete
                        | otherwise         = Nothing
-
-    notFound = responseLBS status404 [("Content-Type","text/plain")] "404 :("
