@@ -88,9 +88,18 @@ route notFound h req respond = do
                    xs -> possibleExts $ getFileExt $ last xs
 
   case (mFileext, mMethod) of
-    (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt (pathInfo req) in
+    (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req in
                         case R.lookup cleanedPathInfo trie of
-      Just vmap -> case M.lookup v $ unVerbs vmap of
+      Just vmap -> continue f v vmap
+      Nothing  -> case trimFileExt $ last $ pathInfo req of
+        "index" -> case R.lookup (init $ pathInfo req) trie of
+          Just vmap -> continue f v vmap
+          Nothing -> respond notFound
+        _       -> respond notFound
+    _ -> respond notFound
+
+  where
+    continue f v vmap = case M.lookup v $ unVerbs vmap of
         Just (mreqbodyf,femap) ->
           case lookupMin f $ unFileExts femap of
             Just r -> do
@@ -110,10 +119,7 @@ route notFound h req respond = do
                     _ -> respond notFound
             Nothing -> respond notFound
         Nothing -> respond notFound
-      Nothing  -> respond notFound
-    _ -> respond notFound
 
-  where
     lookupMin k map | all (k <) (M.keys map) = M.lookup (minimum $ M.keys map) map
                     | otherwise              = M.lookup k map
 
