@@ -3,47 +3,46 @@ nested-routes
 
 > Yet-Another WAI Router.
 
-Declare your respondable locations / URI's in a composable way, much like a bi
-rose tree, where closed nodes are HTTP methods and Content-Types _or_ open
-nodes - nesting down. For example:
-
 ```haskell
-handle ("foo" </> "bar")
-  [ get [ html $ renderPage
-        , json $ renderJson ]
-  , post [ html $ renderAnotherPage
-         , json $ renderAnotherThing ]
-  ]
-  [ handle ("baz") [get [html $ renderLastPage]] []]
+{-# LANGUAGE OverloadedStrings #-}
+
+module Routes where
+
+import Web.Routes.Nested
+import qualified Data.Text as T
+
+router :: Application
+router = route $ do
+  handle [] -- root
+    (get $ do
+      text "woo!"
+      json ("wheeeee" :: T.Text))
+    [ handle ["wat","the","heck"]
+        (get $
+          text "idk man, I'm just here for the beer")
+        []
+    , handle ["meh"]
+        (get $
+          text "I dunno")
+        []
+    ]
+  handle ["foo"]
+    (get $ text "foo")
+    [ handle ["bar"]
+        (get $ do
+          text "bar-ography"
+          json ("{book: \"barography\"}" :: T.Text))
+        []
+    ]
 ```
 
-Would handle `GET` and `POST` to `foo/bar`, `foo/bar.htm{,l}`, and
-`foo/bar.json`, while `foo/bar/baz{,.htm{,l}}` only accepts `GET`.
-
-Something like so:
-
-```
-route ::= [method * [response]] [route]
-
-method ::= GET | POST | PUT | DELETE ...
-
-response ::= HTML | JSON | TEXT ...
-```
 
 ## Installation
 
-TODO: Write installation instructions here
-
-## Usage
-
-TODO: Write usage instructions here
-
-## How to run tests
-
-```
-cabal configure --enable-tests && cabal build && cabal test
+```bash
+cabal install nested-routes
 ```
 
 ## Contributing
 
-TODO: Write contribution instructions here
+Fork, pull request, contact, repeat :)

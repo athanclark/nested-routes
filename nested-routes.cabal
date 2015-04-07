@@ -1,10 +1,10 @@
 Name:                   nested-routes
-Version:                0.0.3
+Version:                0.0.3.1
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
 License-File:           LICENSE
-Synopsis:               Like scotty, but nested
+Synopsis:               Declarative, compositional Wai responses
 -- Description:
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
