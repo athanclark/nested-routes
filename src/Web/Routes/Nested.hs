@@ -9,7 +9,9 @@
 module Web.Routes.Nested
   ( module Web.Routes.Nested.FileExtListener
   , module Web.Routes.Nested.VerbListener
+  , HandlerT (..)
   , handle
+  , notFound
   , route
   ) where
 
@@ -40,7 +42,8 @@ import           Data.Maybe                        (fromMaybe)
 
 
 newtype HandlerT z m a = HandlerT
-  { runHandler :: WriterT (MergeRooted T.Text (Verbs z m Response), FileExts Response) m a }
+  { runHandler :: WriterT ( MergeRooted T.Text (Verbs z m Response)
+                          , MergeRooted T.Text (FileExts Response) ) m a }
   deriving (Functor)
 
 deriving instance Applicative m => Applicative (HandlerT z m)
@@ -61,8 +64,8 @@ handle ts vl [] = do
 
   HandlerT $ tell $
     case ts of
-      [] -> (MergeRooted $ Rooted (Just vfrs) [],                       mempty)
-      _  -> (MergeRooted $ Rooted Nothing [Rest (NE.fromList ts) vfrs], mempty)
+      [] -> (MergeRooted $ Rooted (Just vfrs) [],                           mempty)
+      _  -> (MergeRooted $ Rooted Nothing     [Rest (NE.fromList ts) vfrs], mempty)
 handle ts vl cs = do
   vfrs <- lift $ execWriterT $ runVerbListenerT vl
   (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
@@ -76,62 +79,71 @@ handle ts vl cs = do
 
 
 notFound :: Monad m =>
-            FileExtListenerT Response m ()
+            [T.Text]
+         -> FileExtListenerT Response m ()
          -> HandlerT z m ()
-notFound flistener = do
+notFound ts flistener = do
   (fes :: FileExts Response) <- lift $ execWriterT $ runFileExtListenerT flistener
-  HandlerT $ tell (mempty, fes)
+  HandlerT $ tell $
+    case ts of
+      [] -> (mempty, MergeRooted $ Rooted (Just fes) [])
+      _  -> (mempty, MergeRooted $ Rooted Nothing    [Rest (NE.fromList ts) fes])
 
 
 -- | Turns a @HandlerT@ into a Wai @Application@
 route :: (Functor m, Monad m, MonadIO m) =>
          HandlerT z m a -- ^ Assembled @handle@ calls
       -> Request
-      -> (Response -> m b) -> m b
+      -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
-  (rtrie, fes) <- execWriterT $ runHandler h
-  let trie        = unMergeRooted rtrie
-      notFoundMap = unFileExts fes
-      mMethod     = httpMethodToMSym $ requestMethod req
-      mFileext    = case pathInfo req of
-                      [] -> Just Html
-                      xs -> possibleExts $ getFileExt $ last xs
+  (rtrie, festrie) <- execWriterT $ runHandler h
+  let trie         = unMergeRooted rtrie
+      notFoundTrie = unMergeRooted festrie
+      mMethod      = httpMethodToMSym $ requestMethod req
+      mFileext     = case pathInfo req of
+                       [] -> Just Html
+                       xs -> possibleExts $ getFileExt $ last xs
+      mNotFoundMap :: Maybe (M.Map FileExt Response)
+      mNotFoundMap = (return . unFileExts) =<< R.lookupNearestParent (pathInfo req) notFoundTrie
 
   case (mFileext, mMethod) of
-    (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req in
+    (Just f, Just v) -> let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
+                        in
                         case R.lookup cleanedPathInfo trie of
-      Just vmap -> continue f v vmap notFoundMap
+      Just vmap -> continue f v vmap mNotFoundMap
       Nothing  -> case trimFileExt $ last $ pathInfo req of
         "index" -> case R.lookup (init $ pathInfo req) trie of
-          Just vmap -> continue f v vmap notFoundMap
-          Nothing -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
-        _       -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
-    _ -> respond $ fromMaybe plain404 $ lookupMin Html notFoundMap
+          Just vmap -> continue f v vmap mNotFoundMap
+          Nothing -> liftIO $ respond $ fromMaybe plain404 $ mNotFoundMap >>= lookupMin f
+        _       -> liftIO $ respond $ fromMaybe plain404 $ mNotFoundMap >>= lookupMin f
+    _ -> liftIO $ respond $ fromMaybe plain404 $ mNotFoundMap >>= lookupMin Html
 
   where
-    continue f v vmap notFoundMap = case M.lookup v $ unVerbs vmap of
+    continue :: MonadIO m => FileExt -> Verb -> Verbs z m Response -> Maybe (M.Map FileExt Response) -> m ResponseReceived
+    continue f v vmap mNotFoundMap = case M.lookup v $ unVerbs vmap of
         Just (mreqbodyf,femap) ->
           case lookupMin f $ unFileExts femap of
             Just r -> do
               case mreqbodyf of
-                Nothing    -> respond r
+                Nothing    -> liftIO $ respond r
                 Just (reqbf,Nothing) -> do
                   body <- liftIO $ strictRequestBody req
                   (runReaderT $ reqbf) body
-                  respond r
+                  liftIO $ respond r
                 Just (reqbf,Just bl) -> do
                   case requestBodyLength req of
                     KnownLength bl' -> if bl' <= bl
                                          then do body <- liftIO $ strictRequestBody req
                                                  (runReaderT $ reqbf) body
-                                                 respond r
-                                         else respond $ fromMaybe plain404 $ lookupMin f notFoundMap
-                    _ -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
-            Nothing -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
-        Nothing -> respond $ fromMaybe plain404 $ lookupMin f notFoundMap
+                                                 liftIO $ respond r
+                                         else liftIO $ respond $ fromMaybe plain404 $ mNotFoundMap >>= lookupMin f
+                    _ -> liftIO $ respond $ fromMaybe plain404 $ mNotFoundMap >>= lookupMin f
+            Nothing -> liftIO $ respond $ fromMaybe plain404 $ mNotFoundMap >>= lookupMin f
+        Nothing -> liftIO $ respond $ fromMaybe plain404 $ lookupMin f =<< mNotFoundMap
 
     plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
+    lookupMin :: Ord k => k -> M.Map k a -> Maybe a
     lookupMin k map | all (k <) (M.keys map) = M.lookup (minimum $ M.keys map) map
                     | otherwise              = M.lookup k map
 
