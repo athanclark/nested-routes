@@ -16,6 +16,8 @@ Library
   Exposed-Modules:      Web.Routes.Nested
                         Web.Routes.Nested.VerbListener
                         Web.Routes.Nested.FileExtListener
+                        Data.Trie.Pred
+                        Data.Trie.Pred.Rooted
   Build-Depends:        base >= 4 && < 5
                       , wai
                       , wai-extra
@@ -23,13 +25,14 @@ Library
                       , mtl
                       , transformers
                       , semigroups
+                      , bifunctors
                       , containers
-                      , pseudo-trie >= 0.0.4.3
                       , text
                       , aeson
                       , blaze-html
                       , lucid
                       , bytestring
+                      , attoparsec
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0

@@ -5,6 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 
 module Web.Routes.Nested.VerbListener where
 
@@ -32,7 +34,7 @@ data Verb = Get
 
 type BodyLength = Word64
 
-newtype Verbs z m r = Verbs { unVerbs :: Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExts r) }
+newtype Verbs z m r = Verbs { unVerbs :: Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), r) }
   deriving (Functor, Traversable)
 
 deriving instance                  Monoid    (Verbs z m a)
@@ -50,66 +52,54 @@ instance MonadTrans (VerbListenerT z r) where
 
 
 get :: (Monad m) =>
-       FileExtListenerT Response m a
-    -> VerbListenerT z Response m ()
-get !flistener = do
-  (fileexts :: FileExts Response) <- lift $ execWriterT $
-                                     runFileExtListenerT flistener
-  let new = singleton Get (Nothing, fileexts)
+       a
+    -> VerbListenerT z a m ()
+get r = do
+  let new = singleton Get (Nothing, r)
   VerbListenerT $ tell $ Verbs new
 
 
 post :: (Monad m, MonadIO m) =>
         (BL.ByteString -> m z)
-     -> FileExtListenerT Response m a
-     -> VerbListenerT z Response m ()
-post !handle !flistener = do
-  (fileexts :: FileExts Response) <- lift $ execWriterT $
-                                     runFileExtListenerT flistener
-  let new = singleton Post (Just $ (ReaderT handle, Nothing), fileexts)
+     -> a
+     -> VerbListenerT z a m ()
+post handle r = do
+  let new = singleton Post (Just $ (ReaderT handle, Nothing), r)
   VerbListenerT $ tell $ Verbs new
 
 
 postMax :: (Monad m, MonadIO m) =>
            BodyLength
         -> (BL.ByteString -> m z)
-        -> FileExtListenerT Response m a
-        -> VerbListenerT z Response m ()
-postMax !bl !handle !flistener = do
-  (fileexts :: FileExts Response) <- lift $ execWriterT $
-                                     runFileExtListenerT flistener
-  let new = singleton Post (Just $ (ReaderT handle, Just bl), fileexts)
+        -> a
+        -> VerbListenerT z a m ()
+postMax bl handle r = do
+  let new = singleton Post (Just $ (ReaderT handle, Just bl), r)
   VerbListenerT $ tell $ Verbs new
 
 
 put :: (Monad m, MonadIO m) =>
        (BL.ByteString -> m z)
-    -> FileExtListenerT Response m a
-    -> VerbListenerT z Response m ()
-put !handle !flistener = do
-  (fileexts :: FileExts Response) <- lift $ execWriterT $
-                                     runFileExtListenerT flistener
-  let new = singleton Put (Just $ (ReaderT handle, Nothing), fileexts)
+    -> a
+    -> VerbListenerT z a m ()
+put handle r = do
+  let new = singleton Put (Just $ (ReaderT handle, Nothing), r)
   VerbListenerT $ tell $ Verbs new
 
 
 putMax :: (Monad m, MonadIO m) =>
           BodyLength
        -> (BL.ByteString -> m z)
-       -> FileExtListenerT Response m a
-       -> VerbListenerT z Response m ()
-putMax !bl !handle !flistener = do
-  (fileexts :: FileExts Response) <- lift $ execWriterT $
-                                     runFileExtListenerT flistener
-  let new = singleton Put (Just $ (ReaderT handle, Just bl), fileexts)
+       -> a
+       -> VerbListenerT z a m ()
+putMax bl handle r = do
+  let new = singleton Put (Just $ (ReaderT handle, Just bl), r)
   VerbListenerT $ tell $ Verbs new
 
 
 delete :: (Monad m) =>
-          FileExtListenerT Response m a
-       -> VerbListenerT z Response m ()
-delete !flistener = do
-  (fileexts :: FileExts Response) <- lift $ execWriterT $
-                                     runFileExtListenerT flistener
-  let new = singleton Delete (Nothing, fileexts)
+          a
+       -> VerbListenerT z a m ()
+delete r = do
+  let new = singleton Delete (Nothing, r)
   VerbListenerT $ tell $ Verbs new
