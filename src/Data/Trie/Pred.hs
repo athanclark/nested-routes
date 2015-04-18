@@ -4,31 +4,32 @@
 
 module Data.Trie.Pred where
 
+import Prelude hiding (lookup)
 import Data.List.NonEmpty
 import Data.Bifunctor
 import Control.Applicative
 
 
-data PredTrie (t :: *) (p :: *) (c :: * -> *) a where
+data PredTrie (t :: *) (p :: *) a where
   -- ^ Literal lookups
   More :: t
-       -> Maybe (c a)
-       -> NonEmpty (PredTrie t p c a) -- should sort Pred lower than More
-       -> PredTrie t p c a
+       -> Maybe a
+       -> NonEmpty (PredTrie t p a) -- should sort Pred lower than More
+       -> PredTrie t p a
   -- ^ Exhausively Unique
   Rest :: NonEmpty t
-       -> c a
-       -> PredTrie t p c a
+       -> a
+       -> PredTrie t p a
   -- ^ Predicative
   Pred :: (p, t -> Maybe r)
        -> Maybe (r -> a)
-       -> [PredTrie t p c (r -> a)]
-       -> PredTrie t p c a
-  Nil  :: PredTrie t p c a
+       -> [PredTrie t p (r -> a)]
+       -> PredTrie t p a
+  Nil  :: PredTrie t p a
   -- deriving (Functor)
 
 -- | Rightward bias in that results are overwritten
-merge :: Eq t => PredTrie t p c a -> PredTrie t p c a -> PredTrie t p c a
+merge :: Eq t => PredTrie t p a -> PredTrie t p a -> PredTrie t p a
 merge Nil y = y
 merge x Nil = x
 merge x@(More t mx xs) (More p my ys) =
@@ -63,7 +64,7 @@ merge (Pred (q,q') mx xs) yss@(Pred (w,w') my ys) = yss
   -- | q == w = Pred (w,w') $ xs `sortedUnion` ys -- FACK unifying existentialzurp?
 
 
-sortedUnion :: [PredTrie t p c a] -> [PredTrie t p c a] -> [PredTrie t p c a]
+sortedUnion :: [PredTrie t p a] -> [PredTrie t p a] -> [PredTrie t p a]
 sortedUnion [] y = y
 sortedUnion x [] = x
 sortedUnion (x:xs) (y:ys) = case (x,y) of
@@ -76,24 +77,24 @@ sortedUnion (x:xs) (y:ys) = case (x,y) of
 
 
 
-lookupLR :: (Eq t, Functor c) => [t] -> PredTrie t p c a -> Maybe (Either (c a) a)
-lookupLR [] _ = Nothing
-lookupLR (t:ts) x = case x of
+lookup :: (Eq t) => [t] -> PredTrie t p a -> Maybe a
+lookup [] _ = Nothing
+lookup (t:ts) x = case x of
   Nil -> Nothing
   (More t' mx xs) -> if t == t'
                        then
                          case ts of
-                           [] -> Left <$> mx
-                           _  -> (getFirst $ fmap (lookupLR ts) $ toList xs)
+                           [] -> mx
+                           _  -> (getFirst $ fmap (lookup ts) $ toList xs)
                        else Nothing
   (Rest ts' x) -> if (fromList (t:ts)) == ts'
-                    then Just $ Left x
+                    then Just x
                     else Nothing
   (Pred (_,p) mx xs) -> case p t of
                           Nothing  -> Nothing
                           (Just r) -> case ts of
-                            [] -> Right <$> ($ r) <$> mx
-                            _  -> (bimap (($ r) <$>) ($ r)) <$> (getFirst $ fmap (lookupLR ts) xs)
+                            [] -> ($ r) <$> mx
+                            _  -> ($ r) <$> (getFirst $ fmap (lookup ts) xs)
 
   where
     getFirst :: [Maybe a] -> Maybe a
@@ -103,8 +104,8 @@ lookupLR (t:ts) x = case x of
 
 
 areDisjoint :: (Eq t) =>
-               PredTrie t p c a
-            -> PredTrie t p c a
+               PredTrie t p a
+            -> PredTrie t p a
             -> Bool
 areDisjoint (More t _ _) (More p _ _)
   | t == p = False

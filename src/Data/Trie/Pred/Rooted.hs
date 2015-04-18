@@ -7,28 +7,28 @@ import Data.Monoid
 import Control.Applicative
 
 
-data RootedPredTrie t p c a =
+data RootedPredTrie t p a =
   RootedPredTrie { root :: Maybe a
-                 , children :: [PredTrie t p c a] }
+                 , children :: [PredTrie t p a] }
 
-instance Eq t => Monoid (RootedPredTrie t p c a) where
+instance Eq t => Monoid (RootedPredTrie t p a) where
   mempty = RootedPredTrie Nothing []
   mappend = merge
 
-lookupLR :: (Eq t, Functor c) =>
+lookup :: (Eq t) =>
             [t]
-         -> RootedPredTrie t p c a
-         -> Maybe (Either (c a) a)
-lookupLR [] (RootedPredTrie mx _) = Right <$> mx
-lookupLR ts (RootedPredTrie _ xs) = foldr (go ts) Nothing xs
+         -> RootedPredTrie t p a
+         -> Maybe a
+lookup [] (RootedPredTrie mx _) = mx
+lookup ts (RootedPredTrie _ xs) = foldr (go ts) Nothing xs
   where
-    go ts x Nothing = P.lookupLR ts x
+    go ts x Nothing = P.lookup ts x
     go ts x ma@(Just _) = ma
 
 merge :: (Eq t) =>
-         RootedPredTrie t p c a
-      -> RootedPredTrie t p c a
-      -> RootedPredTrie t p c a
+         RootedPredTrie t p a
+      -> RootedPredTrie t p a
+      -> RootedPredTrie t p a
 merge (RootedPredTrie mx xs) (RootedPredTrie my ys) =
   RootedPredTrie (getLast $ Last mx <> Last my) $
     foldr go [] $ xs ++ ys

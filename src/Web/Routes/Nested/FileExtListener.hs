@@ -68,6 +68,10 @@ json i =
   FileExtListenerT $ tell $
     FileExts $ singleton Json r
 
+jsonOnly :: (A.ToJSON j) =>
+            j -> Response
+jsonOnly i =
+  responseLBS status200 [("Content-Type", "application/json")] $ A.encode i
 
 jsonp :: (A.ToJSON j, Monad m) =>
          j -> FileExtListenerT Response m ()
@@ -77,6 +81,10 @@ jsonp i =
   FileExtListenerT $ tell $
     FileExts $ singleton Json r
 
+jsonpOnly :: (A.ToJSON j) =>
+            j -> Response
+jsonpOnly i =
+  responseLBS status200 [("Content-Type", "application/javascript")] $ A.encode i
 
 text :: (Monad m) =>
         LT.Text -> FileExtListenerT Response m ()
@@ -86,6 +94,9 @@ text i =
   FileExtListenerT $ tell $
     FileExts $ singleton Text r
 
+textOnly :: LT.Text -> Response
+textOnly i =
+  responseLBS status200 [("Content-Type", "text/plain")] $ LT.encodeUtf8 i
 
 blaze :: (Monad m ) =>
          H.Html -> FileExtListenerT Response m ()
@@ -95,6 +106,9 @@ blaze i =
   FileExtListenerT $ tell $
     FileExts $ singleton Html r
 
+blazeOnly :: H.Html -> Response
+blazeOnly i =
+  responseLBS status200 [("Content-Type", "text/html")] $ LT.encodeUtf8 $ H.renderHtml i
 
 lucid :: (Monad m) =>
          L.HtmlT m () -> FileExtListenerT Response m ()
@@ -104,6 +118,11 @@ lucid i = do
   FileExtListenerT $ tell $
     FileExts $ singleton Html r
 
+lucidOnly :: (Monad m) =>
+             L.HtmlT m () -> m Response
+lucidOnly i = do
+  i' <- L.renderBST i
+  return $ responseLBS status200 [("Content-Type", "text/html")] $ i'
 
 builder :: (Monad m) =>
            BU.Builder -> RequestHeaders
@@ -113,6 +132,9 @@ builder i hs e =
   FileExtListenerT $ tell $
     FileExts $ singleton e r
 
+builderOnly :: BU.Builder -> RequestHeaders -> Response
+builderOnly i hs =
+  responseBuilder status200 hs i
 
 bytestring :: (Monad m) =>
               B.ByteString -> RequestHeaders
@@ -121,3 +143,7 @@ bytestring i hs e =
   let r = responseLBS status200 hs i in
   FileExtListenerT $ tell $
     FileExts $ singleton e r
+
+bytestringOnly :: B.ByteString -> RequestHeaders -> Response
+bytestringOnly i hs =
+  responseLBS status200 hs i

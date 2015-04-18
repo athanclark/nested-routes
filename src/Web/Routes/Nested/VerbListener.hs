@@ -51,6 +51,10 @@ instance MonadTrans (VerbListenerT z r) where
   lift ma = VerbListenerT $ lift ma
 
 
+foldMWithKey :: Monad m => (acc -> Verb -> a -> m acc) -> acc -> Map Verb a -> m acc
+foldMWithKey f i map = foldlWithKey (\macc k a -> (\mer -> f mer k a) =<< macc) (return i) map
+
+
 get :: (Monad m) =>
        a
     -> VerbListenerT z a m ()

@@ -5,6 +5,9 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 
 module Web.Routes.Nested
   ( module Web.Routes.Nested.FileExtListener
@@ -40,11 +43,12 @@ import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
+import           Unsafe.Coerce
 
 
 newtype HandlerT z m a = HandlerT
-  { runHandler :: WriterT ( RootedPredTrie T.Text T.Text FileExts (Verbs z m Response)
-                          , RootedPredTrie T.Text T.Text FileExts (Verbs z m Response) ) m a }
+  { runHandler :: WriterT ( RootedPredTrie T.Text T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
+                          , RootedPredTrie T.Text T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())) ) m a }
   deriving (Functor)
 
 deriving instance Applicative m => Applicative (HandlerT z m)
@@ -54,22 +58,25 @@ instance MonadTrans (HandlerT z) where
   lift ma = HandlerT $ lift ma
 
 
--- | Add a path to the list of routes
--- handle :: Monad m =>
---           UrlChunks xs last                 -- ^ Input path, separated by slashes
---        -> ExpectArit xs (ExpectContents last)               -- ^ HTTP Method-oriented monad
---        -> [HandlerT z m ()]             -- ^ Child paths
---        -> HandlerT z m ()
-
-
-
--- handle ts vl [] = do
---   vfrs <- lift $ execWriterT $ runVerbListenerT vl
---
---   HandlerT $ tell $
---     case ts of
---       [] -> (MergeRooted $ Rooted (Just vfrs) [],                           mempty)
---       _  -> (MergeRooted $ Rooted Nothing     [Rest (NE.fromList ts) vfrs], mempty)
+handleLit :: Monad m =>
+             UrlChunks xs last
+          -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
+          -> [HandlerT z m ()]
+          -> HandlerT z m ()
+handleLit ts vl [] = do
+  HandlerT $ tell $ case ts of
+    Root -> (RootedPredTrie (Just vl) [], mempty)
+    _    -> (RootedPredTrie Nothing [buildSingleton ts vl], mempty)
+--   (vfes :: Verbs z m (FileExtListenerT Response m ())) <- lift $ execWriterT $ runVerbListenerT vl
+--   let
+--     vfesMap :: M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExtListenerT Response m ())
+--     vfesMap = unVerbs vfes
+--   (vfesMap' :: M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExts Response))
+--     <- lift $ foldMWithKey (\acc k (q1,q2) -> (\q' -> M.insert k q' acc) <$> (q1,) <$> (execWriterT $ runFileExtListenerT q2)) mempty vfesMap
+--   let vfrs = Verbs vfesMap'
+--   HandlerT $ tell $ case ts of
+--     Root -> (RootedPredTrie (Just $ unsafeCoerce (Left vfrs)) [],    mempty)
+--     _    -> (RootedPredTrie Nothing [buildSingleton ts (Left vfrs)], mempty)
 -- handle ts vl cs = do
 --   vfrs <- lift $ execWriterT $ runVerbListenerT vl
 --   (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
@@ -80,6 +87,23 @@ instance MonadTrans (HandlerT z) where
 --               Rooted _ xs -> (MergeRooted $ Rooted (Just vfrs) xs, mempty)
 --       _  -> let child' = push (unMergeRooted child) $ NE.fromList ts in
 --             (MergeRooted $ Rooted Nothing [P.assign (NE.fromList ts) (Just vfrs) child'], mempty)
+
+-- handleParse :: Monad m =>
+--                UrlChunks xs 'Pred
+--             -> ExpectArity xs (VerbListenerT z Response m a)
+--             -> [HandlerT z m ()]
+--             -> HandlerT z m ()
+
+-- | Add a path to the list of routes
+-- handle :: Monad m =>
+--           UrlChunks xs last                 -- ^ Input path, separated by slashes
+--        -> ExpectArity xs (ExpectContents z m a last)               -- ^ HTTP Method-oriented monad
+--        -> [HandlerT z m ()]             -- ^ Child paths
+--        -> HandlerT z m ()
+
+
+
+
 
 
 -- notFound :: Monad m =>
