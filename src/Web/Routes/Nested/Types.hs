@@ -10,7 +10,6 @@
   , OverlappingInstances
   , MultiParamTypeClasses
   , FunctionalDependencies
-  , AllowAmbiguousTypes
   #-}
 
 module Web.Routes.Nested.Types where
@@ -46,6 +45,17 @@ import Data.Proxy
 --       (Cons ((:~) (t,q)) Root) -> UPred t (iResultToMaybe . parse q) (Just r) []
 --       (Cons ((:~) (t,q)) us)   -> UPred t (iResultToMaybe . parse q) Nothing  [singletonTail us r]
 
+class Singleton chunks a trie | chunks a -> trie where
+  singleton :: chunks -> a -> trie
+
+instance Singleton (UrlChunks '[]) a (RUPTrie T.Text a) where
+  singleton Root r = Rooted (Just r) []
+
+instance ( Singleton (UrlChunks xs) a trie0
+         , Extend (EitherUrlChunk x) trie0 trie1 )=>
+         Singleton (UrlChunks (x ': xs)) a trie1 where
+  singleton (Cons u us) r = extend u (singleton us r)
+
 
 class Extend eitherUrlChunk child result | eitherUrlChunk child -> result where
   extend :: eitherUrlChunk -> child -> result
@@ -66,27 +76,6 @@ instance Extrude (UrlChunks '[]) (RUPTrie T.Text a) (RUPTrie T.Text a) where
 instance ( Extrude (UrlChunks xs) trie0 trie1
          , Extend (EitherUrlChunk x) trie1 trie2 ) => Extrude (UrlChunks (x ': xs)) trie0 trie2 where
   extrude (Cons u us) r = extend u (extrude us r)
-
--- instance Extrude (UrlChunks xs) trie0 trie1 => Extrude (UrlChunks (('Just r) ': xs)) trie1 trie2 where
---   extrude (Cons ((:~) (t,q)) us) r = UPred t (iResultToMaybe . parse q) Nothing [extrude us r]
-
---  extrude :: UrlChunks xs
---          -> RUPTrie T.Text (ExpectArity xs a)
---          -> RUPTrie T.Text a
---  extrude Root r = r
---  extrude chunks r@(Rooted mr rs) | restAreLits chunks = litExtrude (toL chunks) r
---                                  | otherwise = Rooted Nothing [extrudeTail (initChunks chunks) (makeFirst (Proxy :: Proxy xs) (lastChunk chunks) mr rs)]
---    where
---      makeFirst :: Proxy xs -> EitherUrlChunk mx -> Maybe (ExpectArity xs a) -> [UPTrie t (ExpectArity xs a)] -> UPTrie t a
---      makeFirst _ ((:=) t)     mr rs = UMore t mr rs
---      makeFirst _ ((:~) (t,q)) mr rs = UPred t (iResultToMaybe . parse q) mr rs
---
---      extrudeTail :: UrlChunks xs' -> UPTrie T.Text (ExpectArity xs' a) -> UPTrie T.Text a
---      extrudeTail chunks r = case chunks of
---        (Cons Root ((:=) t))     -> UMore t Nothing [r]
---        (Cons us   ((:=) t))     -> UMore t Nothing [extrudeTail us r]
---        (Cons Root ((:~) (t,q))) -> UPred t (iResultToMaybe . parse q) Nothing [r]
---        (Cons us   ((:~) (t,q))) -> UPred t (iResultToMaybe . parse q) Nothing [extrudeTail us r]
 
 
 iResultToMaybe :: IResult T.Text r -> Maybe r
