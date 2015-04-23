@@ -34,10 +34,8 @@ import           Control.Monad.Writer
 import           Control.Monad.Reader
 import qualified Data.List.NonEmpty                as NE
 import           Data.Monoid
-import           Data.Trie.Pred
-import qualified Data.Trie.Pred                    as P
-import           Data.Trie.Pred.Rooted
-import           Data.Trie.Pred.Rooted             as R
+import           Data.Trie.Pred.Unified
+import qualified Data.Trie.Pred.Unified            as P
 import           Data.Traversable
 import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
@@ -47,8 +45,8 @@ import           Unsafe.Coerce
 
 
 newtype HandlerT z m a = HandlerT
-  { runHandler :: WriterT ( RootedPredTrie T.Text T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
-                          , RootedPredTrie T.Text T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())) ) m a }
+  { runHandler :: WriterT ( RPUTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
+                          , RPUTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())) ) m a }
   deriving (Functor)
 
 deriving instance Applicative m => Applicative (HandlerT z m)
@@ -63,47 +61,31 @@ handleLit :: Monad m =>
           -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
           -> [HandlerT z m ()]
           -> HandlerT z m ()
-handleLit ts vl [] = do
-  HandlerT $ tell $ case ts of
-    Root -> (RootedPredTrie (Just vl) [], mempty)
-    _    -> (RootedPredTrie Nothing [buildSingleton ts vl], mempty)
---   (vfes :: Verbs z m (FileExtListenerT Response m ())) <- lift $ execWriterT $ runVerbListenerT vl
---   let
---     vfesMap :: M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExtListenerT Response m ())
---     vfesMap = unVerbs vfes
---   (vfesMap' :: M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExts Response))
---     <- lift $ foldMWithKey (\acc k (q1,q2) -> (\q' -> M.insert k q' acc) <$> (q1,) <$> (execWriterT $ runFileExtListenerT q2)) mempty vfesMap
---   let vfrs = Verbs vfesMap'
---   HandlerT $ tell $ case ts of
---     Root -> (RootedPredTrie (Just $ unsafeCoerce (Left vfrs)) [],    mempty)
---     _    -> (RootedPredTrie Nothing [buildSingleton ts (Left vfrs)], mempty)
--- handle ts vl cs = do
---   vfrs <- lift $ execWriterT $ runVerbListenerT vl
---   (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
---
---   HandlerT $ tell $
---     case ts of
---       [] -> case unMergeRooted child of
---               Rooted _ xs -> (MergeRooted $ Rooted (Just vfrs) xs, mempty)
---       _  -> let child' = push (unMergeRooted child) $ NE.fromList ts in
---             (MergeRooted $ Rooted Nothing [P.assign (NE.fromList ts) (Just vfrs) child'], mempty)
+handleLit ts vl [] =
+  HandlerT $ tell (singleton ts vl, mempty)
+handleLit ts vl cs = do
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
 
--- handleParse :: Monad m =>
---                UrlChunks xs 'Pred
---             -> ExpectArity xs (VerbListenerT z Response m a)
---             -> [HandlerT z m ()]
---             -> HandlerT z m ()
+  HandlerT $ tell $ let
+                      child' = extrude ts child
+                    in
+                    (R.merge child' $ singleton ts vl, mempty)
 
--- | Add a path to the list of routes
--- handle :: Monad m =>
---           UrlChunks xs last                 -- ^ Input path, separated by slashes
---        -> ExpectArity xs (ExpectContents z m a last)               -- ^ HTTP Method-oriented monad
---        -> [HandlerT z m ()]             -- ^ Child paths
---        -> HandlerT z m ()
+handleParse :: Monad m =>
+               UrlChunks xs 'PredLP
+            -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
+            -> [HandlerT z m ()]
+            -> HandlerT z m ()
+handleParse ts vl [] =
+  HandlerT $ tell (singleton ts vl, mempty)
+handleParse ts vl cs = do
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
 
-
-
-
+  HandlerT $ tell $ let
+                      -- child' :: ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
+                      child' = extrude ts child
+                    in
+                    (R.merge child' $ singleton ts vl, mempty)
 
 
 -- notFound :: Monad m =>

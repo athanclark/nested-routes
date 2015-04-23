@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                0.1.1
+Version:                0.1.2
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -14,10 +14,9 @@ Library
   HS-Source-Dirs:       src
   GHC-Options:          -Wall
   Exposed-Modules:      Web.Routes.Nested
+                        Web.Routes.Nested.Types
                         Web.Routes.Nested.VerbListener
                         Web.Routes.Nested.FileExtListener
-                        Data.Trie.Pred
-                        Data.Trie.Pred.Rooted
   Build-Depends:        base >= 4 && < 5
                       , wai
                       , wai-extra
@@ -33,6 +32,8 @@ Library
                       , lucid
                       , bytestring
                       , attoparsec
+                      , pred-trie >= 0.0.6
+                      , singletons
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0
