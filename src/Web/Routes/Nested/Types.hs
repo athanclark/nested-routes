@@ -57,7 +57,7 @@ instance Extend (EitherUrlChunk ('Just r)) (RUPTrie T.Text (r -> a)) (RUPTrie T.
   extend ((:~) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (iResultToMaybe . parse q) mx xs]
 
 
-class Extrude chunks start result where
+class Extrude chunks start result | chunks start -> result where
   extrude :: chunks -> start -> result
 
 instance Extrude (UrlChunks '[]) (RUPTrie T.Text a) (RUPTrie T.Text a) where
