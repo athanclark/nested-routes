@@ -168,11 +168,13 @@ route h req respond = do
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
       case P.lookup cleanedPathInfo rtrie of
         Just eitherM -> continue f v eitherM $ menf
-        Nothing  -> case trimFileExt $ last $ pathInfo req of
-          "index" -> case P.lookup (init $ pathInfo req) rtrie of
-            Just eitherM -> continue f v eitherM $ menf
-            Nothing -> liftIO $ respond404 $ menf
-          _       -> liftIO $ respond404 $ menf
+        Nothing  -> case pathInfo req of
+          [] -> liftIO $ respond404 $ menf
+          _  -> case trimFileExt $ last $ pathInfo req of
+            "index" -> case P.lookup (init $ pathInfo req) rtrie of
+              Just eitherM -> continue f v eitherM $ menf
+              Nothing -> liftIO $ respond404 $ menf
+            _       -> liftIO $ respond404 $ menf
     _ -> liftIO $ respond404 $ notFoundBasic
 
   where
