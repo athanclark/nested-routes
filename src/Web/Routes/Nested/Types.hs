@@ -12,7 +12,17 @@
   , FunctionalDependencies
   #-}
 
-module Web.Routes.Nested.Types where
+module Web.Routes.Nested.Types
+  ( Singleton (..)
+  , Extend (..)
+  , Extrude (..)
+  , iResultToMaybe
+  , restAreLits
+  , ToNE (..)
+  , ToL (..)
+  , ExpectArity
+  , module Web.Routes.Nested.Types.UrlChunks
+  ) where
 
 import Data.Attoparsec.Text
 import Web.Routes.Nested.Types.UrlChunks

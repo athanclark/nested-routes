@@ -1,13 +1,15 @@
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE
+    DeriveFunctor
+  , GADTs
+  , GeneralizedNewtypeDeriving
+  , ScopedTypeVariables
+  , StandaloneDeriving
+  , TypeOperators
+  , OverloadedStrings
+  , DataKinds
+  , TupleSections
+  , FlexibleContexts
+  #-}
 
 module Web.Routes.Nested
   ( module Web.Routes.Nested.FileExtListener
@@ -45,8 +47,8 @@ import           Unsafe.Coerce
 
 
 newtype HandlerT z m a = HandlerT
-  { runHandler :: WriterT ( RPUTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
-                          , RPUTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())) ) m a }
+  { runHandler :: WriterT ( RUPTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
+                          , RUPTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())) ) m a }
   deriving (Functor)
 
 deriving instance Applicative m => Applicative (HandlerT z m)
@@ -56,8 +58,27 @@ instance MonadTrans (HandlerT z) where
   lift ma = HandlerT $ lift ma
 
 
-handleLit :: Monad m =>
-             UrlChunks xs last
+handleLit :: ( Monad m
+             , Singleton (UrlChunks xs)
+                 (ExpectArity xs
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+                 (RUPTrie T.Text
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+             , Extrude (UrlChunks xs)
+                 (RUPTrie T.Text
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+                 (RUPTrie T.Text
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+             ) =>
+             UrlChunks xs
           -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
           -> [HandlerT z m ()]
           -> HandlerT z m ()
@@ -69,10 +90,29 @@ handleLit ts vl cs = do
   HandlerT $ tell $ let
                       child' = extrude ts child
                     in
-                    (R.merge child' $ singleton ts vl, mempty)
+                    (P.merge child' $ singleton ts vl, mempty)
 
-handleParse :: Monad m =>
-               UrlChunks xs 'PredLP
+handleParse :: ( Monad m
+               , Singleton (UrlChunks xs)
+                   (ExpectArity xs
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+                   (RUPTrie T.Text
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+               , Extrude (UrlChunks xs)
+                   (RUPTrie T.Text
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+                   (RUPTrie T.Text
+                           (Either
+                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                              (VerbListenerT z Response m ())))
+               ) =>
+               UrlChunks xs
             -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
             -> [HandlerT z m ()]
             -> HandlerT z m ()
@@ -85,7 +125,7 @@ handleParse ts vl cs = do
                       -- child' :: ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
                       child' = extrude ts child
                     in
-                    (R.merge child' $ singleton ts vl, mempty)
+                    (P.merge child' $ singleton ts vl, mempty)
 
 
 -- notFound :: Monad m =>
