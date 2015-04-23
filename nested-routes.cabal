@@ -15,6 +15,7 @@ Library
   GHC-Options:          -Wall
   Exposed-Modules:      Web.Routes.Nested
                         Web.Routes.Nested.Types
+                        Web.Routes.Nested.Types.UrlChunks
                         Web.Routes.Nested.VerbListener
                         Web.Routes.Nested.FileExtListener
   Build-Depends:        base >= 4 && < 5
