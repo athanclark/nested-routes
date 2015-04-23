@@ -14,10 +14,12 @@
 module Web.Routes.Nested
   ( module Web.Routes.Nested.FileExtListener
   , module Web.Routes.Nested.VerbListener
+  , module Web.Routes.Nested.Types
   , HandlerT (..)
---  , handle
---  , notFound
---  , route
+  , handleLit
+  , handleParse
+  , notFound
+  , route
   ) where
 
 import           Web.Routes.Nested.Types
@@ -43,7 +45,6 @@ import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
-import           Unsafe.Coerce
 
 
 newtype HandlerT z m a = HandlerT

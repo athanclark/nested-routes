@@ -39,4 +39,7 @@ data UrlChunks (xs :: [Maybe *]) where
 -- `initChunks (Cons u us)   = Cons u $ initChunks us
 
 (</>) = Cons
+
+infixr 8 </>
+
 (#) = Root
