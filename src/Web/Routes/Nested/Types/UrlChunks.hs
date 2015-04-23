@@ -10,8 +10,6 @@ module Web.Routes.Nested.Types.UrlChunks where
 
 import Data.Attoparsec.Text
 import qualified Data.Text as T
-import Unsafe.Coerce
-import Data.Singletons.Prelude.List
 
 
 -- | Constrained to AttoParsec & T.Text

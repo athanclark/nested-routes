@@ -30,30 +30,11 @@ import Web.Routes.Nested.VerbListener
 import Web.Routes.Nested.FileExtListener
 import Network.Wai
 import qualified Data.Text as T
-import Data.List.NonEmpty
+import           Data.List.NonEmpty
 import qualified Data.List.NonEmpty as NE
 import Data.Trie.Pred.Unified
 import Data.Trie.Pred.Unified.Tail
-import Unsafe.Coerce
-import Data.Functor.Compose
-import Data.Singletons.Prelude.List
-import Data.Proxy
 
-
--- | Must be a non-empty UrlChunks
--- singleton :: UrlChunks xs
---           -> ExpectArity xs a
---           -> RUPTrie T.Text a
--- singleton Root   r = Rooted (Just r) []
--- singleton chunks r | restAreLits chunks = litSingleton (toL chunks) r
---                    | otherwise = Rooted Nothing [singletonTail chunks r]
---   where
---     singletonTail :: UrlChunks xs -> ExpectArity xs a -> UPTrie T.Text a
---     singletonTail chunks r = case chunks of
---       (Cons ((:=) t)     Root) -> UMore t (Just r) []
---       (Cons ((:=) t)     us)   -> UMore t Nothing  [singletonTail us r]
---       (Cons ((:~) (t,q)) Root) -> UPred t (iResultToMaybe . parse q) (Just r) []
---       (Cons ((:~) (t,q)) us)   -> UPred t (iResultToMaybe . parse q) Nothing  [singletonTail us r]
 
 class Singleton chunks a trie | chunks a -> trie where
   singleton :: chunks -> a -> trie
