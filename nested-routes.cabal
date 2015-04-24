@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                0.2.2
+Version:                0.2.2.2
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -32,7 +32,7 @@ Library
                       , lucid
                       , bytestring
                       , attoparsec
-                      , pred-trie >= 0.0.8
+                      , pred-trie >= 0.0.8.1
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0

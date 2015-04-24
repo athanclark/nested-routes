@@ -33,11 +33,11 @@ data FileExt = Html
   deriving (Show, Eq, Ord)
 
 
-possibleExts :: T.Text -> Maybe FileExt
-possibleExts x | x `elem` htmls = Just Html
-               | x `elem` jsons = Just Json
-               | x `elem` texts = Just Text
-               | otherwise      = Nothing
+toExt :: T.Text -> Maybe FileExt
+toExt x | x `elem` htmls = Just Html
+        | x `elem` jsons = Just Json
+        | x `elem` texts = Just Text
+        | otherwise      = Nothing
   where
     htmls = ["", ".htm", ".html"]
     jsons = [".json"]

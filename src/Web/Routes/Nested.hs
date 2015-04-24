@@ -160,50 +160,43 @@ route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
-                         [] -> Just Html -- fucky balls - I need to remove file extensions INCREMENTALLY balls
-                         xs -> possibleExts $ getFileExt $ last xs
+                         [] -> Just Html
+                         xs -> toExt $ T.pack $ dropWhile (/= '.') $ T.unpack $ last xs
       meitherNotFound = P.lookupNearestParent (pathInfo req) nftrie
 
-  notFoundBasic <- handleNotFound Html Get meitherNotFound
+  notFoundBasic <- handleNotFound (Just Html) Get meitherNotFound
 
-  case (mFileext, mMethod) of
-    (Just f, Just v) -> do
-      menf <- handleNotFound f v meitherNotFound
+  case mMethod of
+    Just v -> do
+      menf <- handleNotFound mFileext v meitherNotFound
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
-      liftIO $ putStrLn $ (T.unpack $ T.intercalate "/" cleanedPathInfo)
       case P.lookup cleanedPathInfo rtrie of
-        Just eitherM -> do liftIO $ putStrLn $ "sheeit"
-                           continue f v eitherM $ menf
+        Just eitherM -> continue mFileext v eitherM $ menf
         Nothing  -> case pathInfo req of
           [] -> liftIO $ respond404 $ menf
           _  -> case trimFileExt $ last $ pathInfo req of
             "index" -> case P.lookup (init $ pathInfo req) rtrie of
-              Just eitherM -> continue f v eitherM $ menf
+              Just eitherM -> continue mFileext v eitherM $ menf
               Nothing -> liftIO $ respond404 $ menf
-            _       -> liftIO $ respond404 $ menf
+            _ -> liftIO $ respond404 $ menf
     _ -> liftIO $ respond404 $ notFoundBasic
 
   where
-    showRUP (Rooted mx xs) = "Rooted " ++ showMaybe mx ++ concatMap showUP xs
-      where
-        showMaybe Nothing = "nada"
-        showMaybe (Just _) = "just"
-        showUP (UMore t _ xs) = " UMore " ++ T.unpack t ++ concatMap showUP xs
-        showUP (UPred t _ _ _) = " UPred " ++ T.unpack t
-
     handleNotFound :: MonadIO m =>
-                      FileExt
+                      Maybe FileExt
                    -> Verb
                    -> Maybe ( Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()) )
                    -> m (Maybe Response)
-    handleNotFound f v meitherNotFound = case meitherNotFound of
-      Just (Left litmonad) -> do
-        vmapLit <- execWriterT $ runVerbListenerT litmonad
-        case M.lookup v (unVerbs vmapLit) of
-          Just (_, femonad) -> do
-            femap <- execWriterT $ runFileExtListenerT femonad
-            return $ lookupMin f $ unFileExts femap
-          Nothing -> return Nothing
+    handleNotFound mf v meitherNotFound = case meitherNotFound of
+      Just (Left litmonad) -> case mf of
+        Nothing -> return Nothing
+        Just f -> do
+          vmapLit <- execWriterT $ runVerbListenerT litmonad
+          case M.lookup v (unVerbs vmapLit) of
+            Just (_, femonad) -> do
+              femap <- execWriterT $ runFileExtListenerT femonad
+              return $ lookupMin f $ unFileExts femap
+            Nothing -> return Nothing
       Just (Right predmonad) -> do
         vmapPred <- execWriterT $ runVerbListenerT predmonad
         case M.lookup v (unVerbs vmapPred) of
@@ -211,21 +204,22 @@ route h req respond = do
           Nothing -> return Nothing
       Nothing -> return Nothing
 
-    respond404 mr = respond $ fromMaybe plain404 mr
 
     continue :: MonadIO m =>
-                FileExt
+                Maybe FileExt
              -> Verb
              -> Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())
              -> Maybe Response
              -> m ResponseReceived
-    continue f v eitherM mnfResp = case eitherM of
-       Left litmonad -> do
-         vmapLit <- execWriterT $ runVerbListenerT litmonad
-         continueLit f v (unVerbs vmapLit) mnfResp
+    continue mf v eitherM mnfResp = case eitherM of
+       Left litmonad -> case mf of
+         Nothing -> liftIO $ respond404 mnfResp -- file extension parse failed
+         Just f -> do
+           vmapLit <- execWriterT $ runVerbListenerT litmonad
+           continueLit f v (unVerbs vmapLit) mnfResp
        Right predmonad -> do
          vmapPred <- execWriterT $ runVerbListenerT predmonad
-         continuePred f v (unVerbs vmapPred) mnfResp
+         continuePred v (unVerbs vmapPred) mnfResp
 
 
     continueLit :: MonadIO m =>
@@ -258,12 +252,11 @@ route h req respond = do
 
 
     continuePred :: MonadIO m =>
-                    FileExt
-                 -> Verb
+                    Verb
                  -> M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), Response)
                  -> Maybe Response
                  -> m ResponseReceived
-    continuePred f v vmap mnfResp = case M.lookup v vmap of
+    continuePred v vmap mnfResp = case M.lookup v vmap of
         Just (mreqbodyf, r) ->
           case mreqbodyf of
             Nothing              -> liftIO $ respond r
@@ -282,22 +275,12 @@ route h req respond = do
         Nothing -> liftIO $ respond404 mnfResp
 
 
+    respond404 mr = respond $ fromMaybe plain404 mr
     plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
     lookupMin :: Ord k => k -> M.Map k a -> Maybe a
     lookupMin k map | all (k <) (M.keys map) = M.lookup (minimum $ M.keys map) map
                     | otherwise              = M.lookup k map
-
-    getFileExt :: T.Text -> T.Text
-    getFileExt s =
-      let mfound = foldl go Nothing $ T.unpack s in
-      case mfound of
-        Nothing -> T.pack ""
-        Just x  -> T.pack x
-      where
-        go Nothing x | x == '.'  = Just "."
-                     | otherwise = Nothing
-        go (Just xs) x = Just $ xs ++ [x]
 
     applyToLast :: (a -> a) -> [a] -> [a]
     applyToLast f [] = []
@@ -305,7 +288,12 @@ route h req respond = do
     applyToLast f (x:xs) = x : applyToLast f xs
 
     trimFileExt :: T.Text -> T.Text
-    trimFileExt s = T.pack $ takeWhile (/= '.') $ T.unpack s
+    trimFileExt s = if (T.unpack s) `endsWithAny` possibleExts
+                    then T.pack $ takeWhile (/= '.') $ T.unpack s
+                    else s
+      where
+        possibleExts = [".html",".htm",".txt",".json"]
+        endsWithAny s xs = (dropWhile (/= '.') s) `elem` xs
 
     httpMethodToMSym :: Method -> Maybe Verb
     httpMethodToMSym x | x == methodGet    = Just Get
