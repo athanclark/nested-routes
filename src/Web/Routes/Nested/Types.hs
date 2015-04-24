@@ -16,7 +16,7 @@ module Web.Routes.Nested.Types
   ( Singleton (..)
   , Extend (..)
   , Extrude (..)
-  , iResultToMaybe
+  , eitherToMaybe
   , restAreLits
   , ToNE (..)
   , ToL (..)
@@ -55,7 +55,7 @@ instance Extend (EitherUrlChunk  'Nothing) (RUPTrie T.Text a)        (RUPTrie T.
   extend ((:=) t) (Rooted mx xs) = Rooted Nothing [UMore t mx xs]
 
 instance Extend (EitherUrlChunk ('Just r)) (RUPTrie T.Text (r -> a)) (RUPTrie T.Text a) where
-  extend ((:~) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (iResultToMaybe . parse q) mx xs]
+  extend ((:~) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (eitherToMaybe . parseOnly q) mx xs]
 
 
 class Extrude chunks start result | chunks start -> result where
@@ -69,9 +69,9 @@ instance ( Extrude (UrlChunks xs) trie0 trie1
   extrude (Cons u us) r = extend u (extrude us r)
 
 
-iResultToMaybe :: IResult T.Text r -> Maybe r
-iResultToMaybe (Done _ r) = Just r
-iResultToMaybe _          = Nothing
+eitherToMaybe :: Either String r -> Maybe r
+eitherToMaybe (Right r) = Just r
+eitherToMaybe _         = Nothing
 
 restAreLits :: UrlChunks xs -> Bool
 restAreLits Root = False

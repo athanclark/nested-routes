@@ -46,6 +46,11 @@ import qualified Data.Map.Lazy                     as M
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
 
+import Debug.Trace
+import Data.Trie.Pred.Unified
+import Data.Trie.Pred.Unified.Tail
+import Data.List (intercalate)
+
 
 newtype HandlerT z m a = HandlerT
   { runHandler :: WriterT ( RUPTrie T.Text (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
@@ -103,29 +108,29 @@ handleParse :: ( Monad m
                            (Either
                               (VerbListenerT z (FileExtListenerT Response m ()) m ())
                               (VerbListenerT z Response m ())))
-               , Extrude (UrlChunks xs)
-                   (RUPTrie T.Text
-                           (Either
-                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
-                              (VerbListenerT z Response m ())))
-                   (RUPTrie T.Text
-                           (Either
-                              (VerbListenerT z (FileExtListenerT Response m ()) m ())
-                              (VerbListenerT z Response m ())))
+              --  , Extrude (UrlChunks xs)
+              --      (RUPTrie T.Text
+              --              (ExpectArity xs (Either
+              --                 (VerbListenerT z (FileExtListenerT Response m ()) m ())
+              --                 (VerbListenerT z Response m ()))))
+              --      (RUPTrie T.Text
+              --              (Either
+              --                 (VerbListenerT z (FileExtListenerT Response m ()) m ())
+              --                 (VerbListenerT z Response m ())))
                ) =>
                UrlChunks xs
             -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
-            -> [HandlerT z m ()]
+            -- -> [HandlerT z m ()] TODO: Encode contained arity top-level? Can't poop the right butt atm
             -> HandlerT z m ()
-handleParse ts vl [] =
+handleParse ts vl =
   HandlerT $ tell (singleton ts vl, mempty)
-handleParse ts vl cs = do
-  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
-
-  HandlerT $ tell $ let
-                      child' = extrude ts child
-                    in
-                    (P.merge child' $ singleton ts vl, mempty)
+-- handleParse ts vl cs = do
+--   (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
+--
+--   HandlerT $ tell $ let
+--                       child' = extrude ts child
+--                     in
+--                     (P.merge child' $ singleton ts vl, mempty)
 
 
 notFound :: ( Monad m
@@ -155,9 +160,8 @@ route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
-                         [] -> Just Html
+                         [] -> Just Html -- fucky balls - I need to remove file extensions INCREMENTALLY balls
                          xs -> possibleExts $ getFileExt $ last xs
-      -- meitherNotFound :: Maybe (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
       meitherNotFound = P.lookupNearestParent (pathInfo req) nftrie
 
   notFoundBasic <- handleNotFound Html Get meitherNotFound
@@ -166,8 +170,10 @@ route h req respond = do
     (Just f, Just v) -> do
       menf <- handleNotFound f v meitherNotFound
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
+      liftIO $ putStrLn $ (T.unpack $ T.intercalate "/" cleanedPathInfo)
       case P.lookup cleanedPathInfo rtrie of
-        Just eitherM -> continue f v eitherM $ menf
+        Just eitherM -> do liftIO $ putStrLn $ "sheeit"
+                           continue f v eitherM $ menf
         Nothing  -> case pathInfo req of
           [] -> liftIO $ respond404 $ menf
           _  -> case trimFileExt $ last $ pathInfo req of
@@ -178,6 +184,13 @@ route h req respond = do
     _ -> liftIO $ respond404 $ notFoundBasic
 
   where
+    showRUP (Rooted mx xs) = "Rooted " ++ showMaybe mx ++ concatMap showUP xs
+      where
+        showMaybe Nothing = "nada"
+        showMaybe (Just _) = "just"
+        showUP (UMore t _ xs) = " UMore " ++ T.unpack t ++ concatMap showUP xs
+        showUP (UPred t _ _ _) = " UPred " ++ T.unpack t
+
     handleNotFound :: MonadIO m =>
                       FileExt
                    -> Verb

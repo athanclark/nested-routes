@@ -17,6 +17,9 @@ data EitherUrlChunk (x :: Maybe *) where
   (:=) :: T.Text             -> EitherUrlChunk 'Nothing
   (:~) :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
 
+l = (:=)
+p = (:~)
+
 -- | Container when defining route paths
 data UrlChunks (xs :: [Maybe *]) where
   Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- unpacks left-to-right
@@ -40,6 +43,6 @@ data UrlChunks (xs :: [Maybe *]) where
 
 (</>) = Cons
 
-infixr 8 </>
+infixr 9 </>
 
-(#) = Root
+o = Root
