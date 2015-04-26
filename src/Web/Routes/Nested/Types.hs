@@ -20,7 +20,6 @@ module Web.Routes.Nested.Types
   , restAreLits
   , ToNE (..)
   , ToL (..)
-  , ExpectArity
   , module Web.Routes.Nested.Types.UrlChunks
   ) where
 
@@ -33,7 +32,6 @@ import qualified Data.Text as T
 import           Data.List.NonEmpty
 import qualified Data.List.NonEmpty as NE
 import Data.Trie.Pred.Unified
-import Data.Trie.Pred.Unified.Tail
 
 
 class Singleton chunks a trie | chunks a -> trie where
@@ -51,7 +49,7 @@ instance ( Singleton (UrlChunks xs) a trie0
 class Extend eitherUrlChunk child result | eitherUrlChunk child -> result where
   extend :: eitherUrlChunk -> child -> result
 
-instance Extend (EitherUrlChunk  'Nothing) (RUPTrie T.Text a)        (RUPTrie T.Text a) where
+instance Extend (EitherUrlChunk  'Nothing) (RUPTrie T.Text a) (RUPTrie T.Text a) where
   extend ((:=) t) (Rooted mx xs) = Rooted Nothing [UMore t mx xs]
 
 instance Extend (EitherUrlChunk ('Just r)) (RUPTrie T.Text (r -> a)) (RUPTrie T.Text a) where
@@ -97,10 +95,4 @@ instance ToL (UrlChunks '[]) where
 
 instance ToL (UrlChunks xs) => ToL (UrlChunks ('Nothing ': xs)) where
   toL (Cons ((:=) t) us) = t : toL us
-
-
-type family ExpectArity (xs :: [Maybe *]) (r :: *) :: * where
-  ExpectArity '[] r = r
-  ExpectArity ('Nothing  ': xs) r = ExpectArity xs r
-  ExpectArity (('Just x) ': xs) r = x -> (ExpectArity xs r)
 
