@@ -81,24 +81,26 @@ type family OnlyJusts (xs :: [Maybe *]) :: [*] where
   OnlyJusts (('Just x) ': xs) = x ': OnlyJusts xs
 
 
+
 handleLit :: ( Monad m
-             , xs' ~ OnlyJusts xs
+             , Functor m
+             , cleanxs ~ OnlyJusts xs
              , HasResult singContent (Either
                                        (VerbListenerT z (FileExtListenerT Response m ()) m ())
                                        (VerbListenerT z Response m ()))
-             , ExpectArity xs' singContent
+             , ExpectArity cleanxs singContent
              , Singleton (UrlChunks xs)
                  singContent
-                 (RUPTrie T.Text (ArityMinusTypeList singContent xs'))
+                 (RUPTrie T.Text (ArityMinusTypeList singContent cleanxs))
              , HasResult children (Either
                                     (VerbListenerT z (FileExtListenerT Response m ()) m ())
                                     (VerbListenerT z Response m ()))
-             , ExpectArity xs' children
+             , ExpectArity cleanxs children
              , Extrude (UrlChunks xs)
                  (RUPTrie T.Text children)
-                 (RUPTrie T.Text (ArityMinusTypeList children xs'))
-             , (ArityMinusTypeList children xs') ~ (ArityMinusTypeList singContent xs')
-             , (ArityMinusTypeList children xs') ~ result
+                 (RUPTrie T.Text (ArityMinusTypeList children cleanxs))
+             , (ArityMinusTypeList children cleanxs) ~ (ArityMinusTypeList singContent cleanxs)
+             , (ArityMinusTypeList children cleanxs) ~ result
              , HeadIsNothing xs
              ) =>
              UrlChunks xs
@@ -107,65 +109,121 @@ handleLit :: ( Monad m
           -> HandlerT z result m ()
 handleLit ts vl [] =
   HandlerT $ tell (singleton ts vl, mempty)
--- handleLit ts vl cs = do
---   (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
---
---   HandlerT $ tell $ let
---                       child' = extrude ts child
---                     in
---                     (P.merge child' $ singleton ts vl, mempty)
+handleLit ts vl cs = do
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
 
--- handleParse :: ( Monad m
---                , Singleton (UrlChunks xs)
---                    (ExpectArity xs
---                            (Either
---                               (VerbListenerT z (FileExtListenerT Response m ()) m ())
---                               (VerbListenerT z Response m ())))
---                    (RUPTrie T.Text
---                            (Either
---                               (VerbListenerT z (FileExtListenerT Response m ()) m ())
---                               (VerbListenerT z Response m ())))
---               --  , Extrude (UrlChunks xs)
---               --      (RUPTrie T.Text
---               --              (ExpectArity xs (Either
---               --                 (VerbListenerT z (FileExtListenerT Response m ()) m ())
---               --                 (VerbListenerT z Response m ()))))
---               --      (RUPTrie T.Text
---               --              (Either
---               --                 (VerbListenerT z (FileExtListenerT Response m ()) m ())
---               --                 (VerbListenerT z Response m ())))
---                ) =>
---                UrlChunks xs
---             -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
---             -- -> [HandlerT z m ()] TODO: Encode contained arity top-level? Can't poop the right butt atm
---             -> HandlerT z m ()
--- handleParse ts vl =
---   HandlerT $ tell (singleton ts vl, mempty)
--- -- handleParse ts vl cs = do
--- --   (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
--- --
--- --   HandlerT $ tell $ let
--- --                       child' = extrude ts child
--- --                     in
--- --                     (P.merge child' $ singleton ts vl, mempty)
+  HandlerT $ tell $ let
+                      child' = extrude ts child
+                    in
+                    (P.merge child' $ singleton ts vl, mempty)
 
 
--- notFound :: ( Monad m
---             , Singleton (UrlChunks xs)
---                 (ExpectArity xs
---                            (Either
---                               (VerbListenerT z (FileExtListenerT Response m ()) m ())
---                               (VerbListenerT z Response m ())))
---                 (RUPTrie T.Text
---                            (Either
---                               (VerbListenerT z (FileExtListenerT Response m ()) m ())
---                               (VerbListenerT z Response m ())))
---             ) =>
---             UrlChunks xs
---          -> ExpectArity xs (Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()))
---          -> HandlerT z m ()
--- notFound ts vl = do
---   HandlerT $ tell (mempty, singleton ts vl)
+handleParse :: ( Monad m
+               , Functor m
+               , cleanxs ~ OnlyJusts xs
+               , HasResult singContent (Either
+                                         (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                                         (VerbListenerT z Response m ()))
+               , ExpectArity cleanxs singContent
+               , Singleton (UrlChunks xs)
+                   singContent
+                   (RUPTrie T.Text (ArityMinusTypeList singContent cleanxs))
+               , HasResult children (Either
+                                      (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                                      (VerbListenerT z Response m ()))
+               , ExpectArity cleanxs children
+               , Extrude (UrlChunks xs)
+                   (RUPTrie T.Text children)
+                   (RUPTrie T.Text (ArityMinusTypeList children cleanxs))
+               , (ArityMinusTypeList children cleanxs) ~ (ArityMinusTypeList singContent cleanxs)
+               , (ArityMinusTypeList children cleanxs) ~ result
+               , HeadIsJust xs
+               ) =>
+               UrlChunks xs
+            -> singContent
+            -> [HandlerT z children m ()]
+            -> HandlerT z result m ()
+handleParse ts vl [] =
+  HandlerT $ tell (singleton ts vl, mempty)
+handleParse ts vl cs = do
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
+
+  HandlerT $ tell $ let
+                      child' = extrude ts child
+                    in
+                    (P.merge child' $ singleton ts vl, mempty)
+
+
+notFoundLit :: ( Monad m
+               , Functor m
+               , cleanxs ~ OnlyJusts xs
+               , HasResult singContent (Either
+                                         (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                                         (VerbListenerT z Response m ()))
+               , ExpectArity cleanxs singContent
+               , Singleton (UrlChunks xs)
+                   singContent
+                   (RUPTrie T.Text (ArityMinusTypeList singContent cleanxs))
+               , HasResult children (Either
+                                      (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                                      (VerbListenerT z Response m ()))
+               , ExpectArity cleanxs children
+               , Extrude (UrlChunks xs)
+                   (RUPTrie T.Text children)
+                   (RUPTrie T.Text (ArityMinusTypeList children cleanxs))
+               , (ArityMinusTypeList children cleanxs) ~ (ArityMinusTypeList singContent cleanxs)
+               , (ArityMinusTypeList children cleanxs) ~ result
+               , HeadIsNothing xs
+               ) =>
+               UrlChunks xs
+            -> singContent
+            -> [HandlerT z children m ()]
+            -> HandlerT z result m ()
+notFoundLit ts vl [] = do
+  HandlerT $ tell (mempty, singleton ts vl)
+notFoundLit ts vl cs = do
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
+
+  HandlerT $ tell $ let
+                      child' = extrude ts child
+                    in
+                    (mempty, P.merge child' $ singleton ts vl)
+
+
+notFoundParse :: ( Monad m
+                 , Functor m
+                 , cleanxs ~ OnlyJusts xs
+                 , HasResult singContent (Either
+                                           (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                                           (VerbListenerT z Response m ()))
+                 , ExpectArity cleanxs singContent
+                 , Singleton (UrlChunks xs)
+                     singContent
+                     (RUPTrie T.Text (ArityMinusTypeList singContent cleanxs))
+                 , HasResult children (Either
+                                        (VerbListenerT z (FileExtListenerT Response m ()) m ())
+                                        (VerbListenerT z Response m ()))
+                 , ExpectArity cleanxs children
+                 , Extrude (UrlChunks xs)
+                     (RUPTrie T.Text children)
+                     (RUPTrie T.Text (ArityMinusTypeList children cleanxs))
+                 , (ArityMinusTypeList children cleanxs) ~ (ArityMinusTypeList singContent cleanxs)
+                 , (ArityMinusTypeList children cleanxs) ~ result
+                 , HeadIsJust xs
+                 ) =>
+                 UrlChunks xs
+              -> singContent
+              -> [HandlerT z children m ()]
+              -> HandlerT z result m ()
+notFoundParse ts vl [] = do
+  HandlerT $ tell (mempty, singleton ts vl)
+notFoundParse ts vl cs = do
+  (child,_) <- lift $ foldM (\acc c -> (acc <>) <$> (execWriterT $ runHandler c)) mempty cs
+
+  HandlerT $ tell $ let
+                      child' = extrude ts child
+                    in
+                    (mempty, P.merge child' $ singleton ts vl)
 
 
 -- | Turns a @HandlerT@ into a Wai @Application@
