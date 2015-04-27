@@ -114,7 +114,7 @@ lucid :: (Monad m) =>
          L.HtmlT m () -> FileExtListenerT Response m ()
 lucid i = do
   i' <- lift $ L.renderBST i
-  let r = responseLBS status200 [("Content-Type", "text/html")] $ i'
+  let r = responseLBS status200 [("Content-Type", "text/html")] i'
   FileExtListenerT $ tell $
     FileExts $ singleton Html r
 
@@ -122,7 +122,7 @@ lucidOnly :: (Monad m) =>
              L.HtmlT m () -> m Response
 lucidOnly i = do
   i' <- L.renderBST i
-  return $ responseLBS status200 [("Content-Type", "text/html")] $ i'
+  return $ responseLBS status200 [("Content-Type", "text/html")] i'
 
 builder :: (Monad m) =>
            BU.Builder -> RequestHeaders

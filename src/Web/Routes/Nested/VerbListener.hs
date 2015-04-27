@@ -1,12 +1,12 @@
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE DeriveFoldable             #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE
+    DeriveFunctor
+  , DeriveTraversable
+  , DeriveFoldable
+  , GeneralizedNewtypeDeriving
+  , ScopedTypeVariables
+  , StandaloneDeriving
+  , MultiParamTypeClasses
+  #-}
 
 module Web.Routes.Nested.VerbListener where
 
@@ -52,7 +52,7 @@ instance MonadTrans (VerbListenerT z r) where
 
 
 foldMWithKey :: Monad m => (acc -> Verb -> a -> m acc) -> acc -> Map Verb a -> m acc
-foldMWithKey f i map = foldlWithKey (\macc k a -> (\mer -> f mer k a) =<< macc) (return i) map
+foldMWithKey f i = foldlWithKey (\macc k a -> (\mer -> f mer k a) =<< macc) (return i)
 
 
 get :: (Monad m) =>
@@ -68,7 +68,7 @@ post :: (Monad m, MonadIO m) =>
      -> a
      -> VerbListenerT z a m ()
 post handle r = do
-  let new = singleton Post (Just $ (ReaderT handle, Nothing), r)
+  let new = singleton Post (Just (ReaderT handle, Nothing), r)
   VerbListenerT $ tell $ Verbs new
 
 
@@ -78,7 +78,7 @@ postMax :: (Monad m, MonadIO m) =>
         -> a
         -> VerbListenerT z a m ()
 postMax bl handle r = do
-  let new = singleton Post (Just $ (ReaderT handle, Just bl), r)
+  let new = singleton Post (Just (ReaderT handle, Just bl), r)
   VerbListenerT $ tell $ Verbs new
 
 
@@ -87,7 +87,7 @@ put :: (Monad m, MonadIO m) =>
     -> a
     -> VerbListenerT z a m ()
 put handle r = do
-  let new = singleton Put (Just $ (ReaderT handle, Nothing), r)
+  let new = singleton Put (Just (ReaderT handle, Nothing), r)
   VerbListenerT $ tell $ Verbs new
 
 
@@ -97,7 +97,7 @@ putMax :: (Monad m, MonadIO m) =>
        -> a
        -> VerbListenerT z a m ()
 putMax bl handle r = do
-  let new = singleton Put (Just $ (ReaderT handle, Just bl), r)
+  let new = singleton Put (Just (ReaderT handle, Just bl), r)
   VerbListenerT $ tell $ Verbs new
 
 
