@@ -84,7 +84,7 @@ type family LastIsJust (xs :: [Maybe *]) :: Constraint where
   LastIsJust (('Just x) ': '[]) = ()
   LastIsJust (x ': xs) = LastIsJust xs
 
--- | For routes /ending/ with a literal.
+-- | For routes ending with a literal.
 handleLit :: ( Monad m
              , Functor m
              , cleanxs ~ OnlyJusts xs
@@ -114,7 +114,7 @@ handleLit ts vl (Just cs) = do
                     in
                     (child, mempty)
 
--- | For routes /ending/ with a parser.
+-- | For routes ending with a parser.
 handleParse :: ( Monad m
                , Functor m
                , cleanxs ~ OnlyJusts xs
