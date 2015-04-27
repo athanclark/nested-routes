@@ -22,7 +22,7 @@ p = (:~)
 
 -- | Container when defining route paths
 data UrlChunks (xs :: [Maybe *]) where
-  Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- unpacks left-to-right
+  Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- stack is left-to-right
   Root  :: UrlChunks '[]
 
 (</>) = Cons

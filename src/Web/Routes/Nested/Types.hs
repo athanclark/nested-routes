@@ -10,12 +10,15 @@
   , OverlappingInstances
   , MultiParamTypeClasses
   , FunctionalDependencies
+  , ConstraintKinds
+  , AllowAmbiguousTypes
   #-}
 
 module Web.Routes.Nested.Types
   ( Singleton (..)
   , Extend (..)
   , Extrude (..)
+  , OnlyJusts
   , eitherToMaybe
   , restAreLits
   , ToNE (..)
@@ -32,7 +35,44 @@ import qualified Data.Text as T
 import           Data.List.NonEmpty
 import qualified Data.List.NonEmpty as NE
 import Data.Trie.Pred.Unified
+import Data.Function.Poly
 
+
+type family OnlyJusts (xs :: [Maybe *]) :: [*] where
+  OnlyJusts '[] = '[]
+  OnlyJusts ('Nothing  ': xs) = OnlyJusts xs
+  OnlyJusts (('Just x) ': xs) = x ': OnlyJusts xs
+
+
+--class Assign chunks mx trie result | chunks mx trie -> result where
+--  assign :: chunks -> mx -> trie -> result
+--
+--instance Assign (UrlChunks '[]) (Maybe a) (RUPTrie T.Text a) (RUPTrie T.Text a) where
+--  assign ts mx trie = assignLit (toL ts) mx trie
+--
+--type family PrefixOnJust (x :: Maybe *) (f :: *) :: * where
+--  PrefixOnJust 'Nothing f  = f
+--  PrefixOnJust ('Just x) f = x -> f
+--
+---- TODO: Figure out how to tell what existential type the children of a pred are
+--instance ( ExpectArity (OnlyJusts xs) f
+--         , HasResult f a
+--         , PrefixOnJust x a ~ a'
+--         , PrefixOnJust x f ~ f'
+--         , Assign (UrlChunks xs) (Maybe f) (RUPTrie T.Text a') (RUPTrie T.Text a')
+--         ) => Assign (UrlChunks (x ': xs)) (Maybe f') (RUPTrie T.Text a) (RUPTrie T.Text a) where
+--  assign (Cons ((:=) t) Root) mf yy@(UMore p my ys)
+--    | t == p = UMore p mf ys
+--    | otherwise = yy
+--  assign (Cons ((:=) t) us) mf yy@(UMore p my ys)
+--    | t == p = UMore p my $ Prelude.map (assign us mf) ys
+--    | otherwise = yy
+--  assign (Cons ((:~) (t,q)) Root) mf yy@(UPred p q' mry yrs)
+--    | t == p = UPred p q mf yrs
+--    | otherwise = yy
+--  assign (Cons ((:~) (t,q)) us) mf yy@(UPred p q' mry yrs)
+--    | t == p = UPred p q' mry $ Prelude.map (assign us mf) yrs
+--    | otherwise = yy
 
 class Singleton chunks a trie | chunks a -> trie where
   singleton :: chunks -> a -> trie
@@ -44,6 +84,27 @@ instance ( Singleton (UrlChunks xs) a trie0
          , Extend (EitherUrlChunk x) trie0 trie1 )=>
          Singleton (UrlChunks (x ': xs)) a trie1 where
   singleton (Cons u us) r = extend u (singleton us r)
+
+
+-- class Extringleton chunks a child result | chunks a child -> result where
+--   extringleton :: chunks -> a -> child -> result
+--
+-- instance Extringleton (UrlChunks '[]) a (RUPTrie T.Text a) (RUPTrie T.Text a) where
+--   extringleton Root x (Rooted _ xs) = Rooted x xs
+--
+-- instance ( Extringleton (UrlChunks xs)
+--          , ExtendWith (EitherUrlChunk x) a
+--   extringleton (Cons u us) x trie = extendWith u x (
+--
+--
+-- class ExtendWith eitherUrlChunk child a result | eitherUrlChunk child a -> result where
+--   extendWith :: eitherUrlChunk -> child -> a -> result
+--
+-- instance ExtendWith (EitherUrlChunk  'Nothing) (RUPTrie T.Text a) a (RUPTrie T.Text a) where
+--   extendWith ((:=) t) x (Rooted _ xs) = Rooted Nothing [UMore t (Just x) xs]
+--
+-- instance ExtendWith (EitherUrlChunk ('Just r)) (RUPTrie T.Text (r -> a)) (r -> a) (RUPTrie T.Text a) where
+--   extendWith ((:~) (t,q)) x (Rooted _ xs) = Rooted Nothing [UPred t (eitherToMaybe . parseOnly q) (Just x) xs]
 
 
 class Extend eitherUrlChunk child result | eitherUrlChunk child -> result where
