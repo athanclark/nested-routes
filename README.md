@@ -33,10 +33,10 @@ router = route handlers
       handleParse (p ("num",double) </> o)
         (\d -> Right $ get $ textOnly $ LT.pack $ show d) $ Just $
         handleLit (l "bar" </> o)
-           (\d -> Left $ get $ text $ (LT.pack $ show d) `LT.append` " bars")                                                                                           
-           Nothing                                                                                                                                                  
+           (\d -> Left $ get $ text $ (LT.pack $ show d) `LT.append` " bars")
+           Nothing
 ```
-                                                                                              
+
 The route specification syntax is a little strange right now - `l` specifies                                          
 a "literal chunk" of a handlable url (ie - `l "foo" </> l "bar" </> o` would                                                 
 represent the url `/foo/bar`), while `p` represents a "parsable" url chunk,                                                                     
