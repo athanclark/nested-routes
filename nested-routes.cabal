@@ -5,7 +5,73 @@ Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
 License-File:           LICENSE
 Synopsis:               Declarative, compositional Wai responses
--- Description:
+Description:
+  A method to writing Wai responses
+  .
+  This library attempts to make it easier to write nice Wai response handlers
+  by giving us a Sinatra/
+  <https://hackage.haskell.org/package/scotty Scotty>-like syntax for declaring HTTP-verb oriented
+  routes, in addition to file-extension handling and rose-tree like composition.
+  Not only do we have literal route specification, like
+  <https://hackage.haskell.org/package/scotty Scotty> &
+  <https://hackage.haskell.org/package/spock Spock>, but we
+  can also embed
+  <https://hackage.haskell.org/package/attoparsec Attoparsec>
+  parsers /directly/ in our routes, with our handlers
+  reflecting their results. As an example:
+  .
+  > router :: Application
+  > router = route handlers
+  >   where
+  >     handlers = do
+  >       handleLit o
+  >         (Left $ get $ text "home")
+  >         Nothing
+  >       handleLit (l "foo" </> l "bar" </> o)
+  >         (Left $ get $ text "foobar") $ Just $
+  >         handleParse (p ("baz",double) </> o)
+  >           (\d -> Right $ get $ textOnly $ LT.pack (show d) `LT.append` " bazs")
+  >           Nothing
+  >       handleParse (p ("num",double) </> o)
+  >         (\d -> Right $ get $ textOnly $ LT.pack $ show d) $ Just $
+  >         handleLit (l "bar" </> o)
+  >            (\d -> Left $ get $ text $ (LT.pack $ show d) `LT.append` " bars")
+  >            Nothing
+  .
+  The route specification syntax is a little strange right now - @l@ specifies
+  a *literal* "chunk" of a handlable url (ie - @l "foo" </> l "bar" </> o@ would
+  represent the url @/foo/bar@), while @p@ represents a *parsable* url chunk,
+  which expects a pair - the left element being merely a reference name for the
+  parser during internal plumbing, and the right being the actual @Parser@.
+  .
+  Each route being handled needs some kind of content - that's where the @Either@
+  stuff comes in to play. For every parsed url chunk, the route expects a function
+  of arity matching 1-for-1 with the parsed contents. For example, @\d -> ...@ in the
+  demonstration above is such a function, where @d :: Double@.
+  .
+  When we test our application:
+  .
+  >  λ> curl localhost:3000/
+  >  ↪ "home"
+  .
+  >  λ> curl localhost:3000/foo/bar
+  >  ↪ "foobar"
+  .
+  >  λ> curl localhost:3000/foo/bar.txt
+  >  ↪ "foobar"
+  .
+  >  λ> curl localhost:3000/foo/bar/5678.5678
+  >  ↪ "5678.5678 bazs"
+  .
+  >  λ> curl localhost:3000/1234.1234
+  >  ↪ "1234.1234"
+  .
+  >  λ> curl localhost:3000/2e5
+  >  ↪ "200000.0"
+  .
+  >  λ> curl localhost:3000/1234.1234/bar
+  >  ↪ "1234.1234 bars"
+
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
 
@@ -18,7 +84,7 @@ Library
                         Web.Routes.Nested.Types.UrlChunks
                         Web.Routes.Nested.VerbListener
                         Web.Routes.Nested.FileExtListener
-  Build-Depends:        base >= 4 && < 5
+  Build-Depends:        base >= 4.6 && < 5
                       , wai
                       , wai-extra
                       , http-types

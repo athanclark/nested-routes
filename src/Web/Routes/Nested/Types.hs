@@ -11,7 +11,6 @@
   , MultiParamTypeClasses
   , FunctionalDependencies
   , ConstraintKinds
-  , AllowAmbiguousTypes
   #-}
 
 module Web.Routes.Nested.Types

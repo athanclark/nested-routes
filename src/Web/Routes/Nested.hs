@@ -56,10 +56,8 @@ import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
 import           Data.Constraint
 
-import Debug.Trace
 import Data.Trie.Pred.Unified
 import Data.Function.Poly
-import Data.List (intercalate)
 
 
 newtype HandlerT z x m a = HandlerT
@@ -86,7 +84,7 @@ type family LastIsJust (xs :: [Maybe *]) :: Constraint where
   LastIsJust (('Just x) ': '[]) = ()
   LastIsJust (x ': xs) = LastIsJust xs
 
-
+-- | For routes /ending/ with a literal.
 handleLit :: ( Monad m
              , Functor m
              , cleanxs ~ OnlyJusts xs
@@ -102,9 +100,9 @@ handleLit :: ( Monad m
              , childType ~ TypeListToArity cleanxs result
              , LastIsNothing xs
              ) =>
-             UrlChunks xs
-          -> childType
-          -> Maybe (HandlerT z childType m ())
+             UrlChunks xs -- ^ Path to match against
+          -> childType -- ^ Possibly a function, ending in @EitherResponse z m@
+          -> Maybe (HandlerT z childType m ()) -- ^ Potential child routes
           -> HandlerT z result m ()
 handleLit ts vl Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
@@ -116,8 +114,7 @@ handleLit ts vl (Just cs) = do
                     in
                     (child, mempty)
 
-
-
+-- | For routes /ending/ with a parser.
 handleParse :: ( Monad m
                , Functor m
                , cleanxs ~ OnlyJusts xs
@@ -145,9 +142,7 @@ handleParse ts vl (Just cs) = do
   HandlerT $ tell $ let
                       child = extrude ts $ Rooted (Just vl) ctrie
                     in
-                    (trace $ showTrie child)
                     (child, mempty)
-
 
 
 notFoundLit :: ( Monad m
@@ -227,8 +222,6 @@ route h req respond = do
       meitherNotFound = P.lookupNearestParent (pathInfo req) nftrie
 
   notFoundBasic <- handleNotFound (Just Html) Get meitherNotFound
-
-  liftIO $ putStrLn $ showTrie rtrie
 
   case mMethod of
     Just v -> do
