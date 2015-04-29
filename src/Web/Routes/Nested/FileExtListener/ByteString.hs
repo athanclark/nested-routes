@@ -14,24 +14,24 @@ import           Network.Wai
 import           Control.Monad.Writer
 
 
-bytestring :: (Monad m) =>
-              B.ByteString -> RequestHeaders
-           -> FileExt -> FileExtListenerT Response m ()
-bytestring i hs e =
+-- | @ByteString@ is ambiguous - we need to know what @RequestHeaders@ and @FileExt@ should be associated.
+bytestring :: Monad m => FileExt -> RequestHeaders -> B.ByteString -> FileExtListenerT Response m ()
+bytestring e hs i =
   let r = responseLBS status200 hs i in
   FileExtListenerT $ tell $
     FileExts $ singleton e r
 
-
-bytestringOnly :: B.ByteString -> RequestHeaders -> Response
-bytestringOnly i hs =
-  responseLBS status200 hs i
-
-
-bytestringStatus :: (Monad m) =>
-                    B.ByteString -> Status -> RequestHeaders
-                 -> FileExt -> FileExtListenerT Response m ()
-bytestringStatus i s hs e =
+bytestringStatus :: Monad m => FileExt -> Status -> RequestHeaders -> B.ByteString -> FileExtListenerT Response m ()
+bytestringStatus e s hs i =
   let r = responseLBS s hs i in
   FileExtListenerT $ tell $
     FileExts $ singleton e r
+
+
+bytestringOnly :: RequestHeaders -> B.ByteString -> Response
+bytestringOnly = responseLBS status200
+
+-- | The exact same thing as @Network.Wai.responseLBS@.
+bytestringOnlyStatus :: Status -> RequestHeaders -> B.ByteString -> Response
+bytestringOnlyStatus = responseLBS
+
