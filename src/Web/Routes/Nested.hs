@@ -333,7 +333,10 @@ route h req respond = do
         Nothing -> liftIO $ respond404 mnfResp
 
 
+    respond404 :: Maybe Response -> IO ResponseReceived
     respond404 mr = respond $ fromMaybe plain404 mr
+
+    plain404 :: Response
     plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
     lookupMin :: Ord k => k -> M.Map k a -> Maybe a
