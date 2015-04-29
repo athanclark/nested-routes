@@ -1,23 +1,21 @@
-{-# LANGUAGE
-    DeriveFunctor
-  , DeriveTraversable
-  , GeneralizedNewtypeDeriving
-  , OverloadedStrings
-  , StandaloneDeriving
-  #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 
 module Web.Routes.Nested.FileExtListener.Types where
 
-import qualified Data.Text as T
+import qualified Data.Text            as T
 
-import Data.Monoid
-import Data.Traversable
-import Data.Foldable hiding (elem)
-import Data.Map
-import Control.Monad.Trans
-import Control.Monad.Writer
-import Control.Applicative
+import           Control.Applicative
+import           Control.Monad.Trans
+import           Control.Monad.Writer
+import           Data.Foldable        hiding (elem)
+import           Data.Map
+import           Data.Monoid
+import           Data.Traversable
 
 
 data FileExt = Html

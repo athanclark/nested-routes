@@ -1,15 +1,14 @@
-{-# LANGUAGE
-    OverloadedStrings
-  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 
 module Web.Routes.Nested.FileExtListener.Builder where
 
-import Web.Routes.Nested.FileExtListener.Types
+import           Web.Routes.Nested.FileExtListener.Types
 
-import qualified Data.ByteString.Builder as BU
-import Data.Map
-import           Network.HTTP.Types      (status200, RequestHeaders)
+import qualified Data.ByteString.Builder                 as BU
+import           Data.Map
+import           Network.HTTP.Types                      (RequestHeaders,
+                                                          status200)
 import           Network.Wai
 
 import           Control.Monad.Writer

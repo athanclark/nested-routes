@@ -1,18 +1,17 @@
-{-# LANGUAGE
-    OverloadedStrings
-  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 
 module Web.Routes.Nested.FileExtListener.Blaze where
 
-import Web.Routes.Nested.FileExtListener.Types
+import           Web.Routes.Nested.FileExtListener.Types
 
-import qualified Text.Blaze.Html         as H
-import qualified Text.Blaze.Html.Renderer.Text as H
-import qualified Data.Text.Lazy.Encoding as LT
-import Data.Map
-import           Network.HTTP.Types      (status200, RequestHeaders, Status)
+import           Data.Map
+import qualified Data.Text.Lazy.Encoding                 as LT
+import           Network.HTTP.Types                      (RequestHeaders,
+                                                          Status, status200)
 import           Network.Wai
+import qualified Text.Blaze.Html                         as H
+import qualified Text.Blaze.Html.Renderer.Text           as H
 
 import           Control.Monad.Writer
 
