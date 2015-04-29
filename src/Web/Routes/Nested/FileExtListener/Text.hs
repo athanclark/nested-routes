@@ -7,14 +7,12 @@ module Web.Routes.Nested.FileExtListener.Text where
 
 import Web.Routes.Nested.FileExtListener.Types
 
-import qualified Data.Text               as T
 import qualified Data.Text.Lazy          as LT
 import qualified Data.Text.Lazy.Encoding as LT
 import Data.Map
 import           Network.HTTP.Types      (status200, RequestHeaders, Status)
 import           Network.Wai
 
-import           Control.Monad.Trans
 import           Control.Monad.Writer
 
 

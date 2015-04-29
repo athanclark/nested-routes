@@ -10,15 +10,10 @@
 
 module Web.Routes.Nested.VerbListener where
 
-import           Web.Routes.Nested.FileExtListener
-
-import           Network.Wai
-
 import           Control.Applicative hiding (empty)
 import           Control.Monad.Trans
 import           Control.Monad.Writer
 import           Control.Monad.Reader
-import           Data.Monoid
 import           Data.Foldable
 import           Data.Traversable
 import           Data.Map.Lazy

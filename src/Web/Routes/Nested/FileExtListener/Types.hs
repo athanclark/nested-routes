@@ -16,7 +16,6 @@ import Data.Traversable
 import Data.Foldable hiding (elem)
 import Data.Map
 import Control.Monad.Trans
-import Control.Monad.IO.Class
 import Control.Monad.Writer
 import Control.Applicative
 

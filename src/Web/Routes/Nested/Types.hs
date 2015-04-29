@@ -27,14 +27,9 @@ module Web.Routes.Nested.Types
 
 import Data.Attoparsec.Text
 import Web.Routes.Nested.Types.UrlChunks
-import Web.Routes.Nested.VerbListener
-import Web.Routes.Nested.FileExtListener
-import Network.Wai
 import qualified Data.Text as T
 import           Data.List.NonEmpty
-import qualified Data.List.NonEmpty as NE
 import Data.Trie.Pred.Unified
-import Data.Function.Poly
 
 
 type family OnlyJusts (xs :: [Maybe *]) :: [*] where

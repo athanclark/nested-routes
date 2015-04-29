@@ -37,26 +37,20 @@ import           Web.Routes.Nested.VerbListener
 
 import           Network.HTTP.Types
 import           Network.Wai
-import           Network.Wai.Middleware.AddHeaders
 
 import           Control.Applicative
-import           Control.Arrow                     (second, first, (***))
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Writer
 import           Control.Monad.Reader
-import qualified Data.List.NonEmpty                as NE
-import           Data.Monoid
 import           Data.Trie.Pred.Unified
 import qualified Data.Trie.Pred.Unified            as P
-import           Data.Traversable
 import qualified Data.Text                         as T
 import qualified Data.Map.Lazy                     as M
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
 import           Data.Constraint
 
-import Data.Trie.Pred.Unified
 import Data.Function.Poly
 
 
@@ -344,7 +338,7 @@ route h req respond = do
                     | otherwise              = M.lookup k map
 
     applyToLast :: (a -> a) -> [a] -> [a]
-    applyToLast f [] = []
+    applyToLast _ [] = []
     applyToLast f (x:[]) = f x : []
     applyToLast f (x:xs) = x : applyToLast f xs
 
