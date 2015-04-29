@@ -15,7 +15,7 @@ import qualified Data.ByteString.Builder as BU
 import qualified Text.Blaze.Html         as H
 import qualified Text.Blaze.Html.Renderer.Text as H
 import qualified Lucid.Base              as L
-import           Network.HTTP.Types      (status200, RequestHeaders)
+import           Network.HTTP.Types      (status200, RequestHeaders, Status)
 import           Network.Wai
 
 import           Control.Applicative
@@ -144,6 +144,17 @@ bytestring i hs e =
   FileExtListenerT $ tell $
     FileExts $ singleton e r
 
+
 bytestringOnly :: B.ByteString -> RequestHeaders -> Response
 bytestringOnly i hs =
   responseLBS status200 hs i
+
+
+bytestringStatus :: (Monad m) =>
+                    B.ByteString -> Status -> RequestHeaders
+                 -> FileExt -> FileExtListenerT Response m ()
+bytestringStatus i s hs e =
+  let r = responseLBS s hs i in
+  FileExtListenerT $ tell $
+    FileExts $ singleton e r
+

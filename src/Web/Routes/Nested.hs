@@ -226,6 +226,7 @@ route h req respond = do
   case mMethod of
     Just v -> do
       menf <- handleNotFound mFileext v meitherNotFound
+
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
       case P.lookup cleanedPathInfo rtrie of
         Just eitherM -> continue mFileext v eitherM $ menf
@@ -233,10 +234,10 @@ route h req respond = do
           [] -> liftIO $ respond404 $ menf
           _  -> case trimFileExt $ last $ pathInfo req of
             "index" -> case P.lookup (init $ pathInfo req) rtrie of
-              Just eitherM -> continue mFileext v eitherM $ menf
-              Nothing -> liftIO $ respond404 $ menf
-            _ -> liftIO $ respond404 $ menf
-    _ -> liftIO $ respond404 $ notFoundBasic
+              Just eitherM -> continue mFileext v eitherM menf
+              Nothing -> liftIO $ respond404 menf
+            _ -> liftIO $ respond404 menf
+    _ -> liftIO $ respond404 notFoundBasic
 
   where
     handleNotFound :: MonadIO m =>
