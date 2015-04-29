@@ -229,9 +229,9 @@ route h req respond = do
 
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
       case P.lookup cleanedPathInfo rtrie of
-        Just eitherM -> continue mFileext v eitherM $ menf
+        Just eitherM -> continue mFileext v eitherM menf
         Nothing  -> case pathInfo req of
-          [] -> liftIO $ respond404 $ menf
+          [] -> liftIO $ respond404 menf
           _  -> case trimFileExt $ last $ pathInfo req of
             "index" -> case P.lookup (init $ pathInfo req) rtrie of
               Just eitherM -> continue mFileext v eitherM menf
@@ -243,7 +243,7 @@ route h req respond = do
     handleNotFound :: MonadIO m =>
                       Maybe FileExt
                    -> Verb
-                   -> Maybe ( Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ()) )
+                   -> Maybe (EitherResponse z m)
                    -> m (Maybe Response)
     handleNotFound mf v meitherNotFound = case meitherNotFound of
       Just (Left litmonad) -> case mf of
@@ -266,7 +266,7 @@ route h req respond = do
     continue :: MonadIO m =>
                 Maybe FileExt
              -> Verb
-             -> Either (VerbListenerT z (FileExtListenerT Response m ()) m ()) (VerbListenerT z Response m ())
+             -> EitherResponse z m
              -> Maybe Response
              -> m ResponseReceived
     continue mf v eitherM mnfResp = case eitherM of
