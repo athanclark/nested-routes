@@ -126,7 +126,7 @@ Library
                       , lucid
                       , bytestring
                       , attoparsec
-                      , pred-trie >= 0.0.12
+                      , pred-trie >= 0.1
                       , poly-arity >= 0.0.3
 
 Test-Suite spec
