@@ -252,15 +252,14 @@ route h req respond = do
              -> Maybe Response
              -> m ResponseReceived
     continue mf v eitherM mnfResp = case eitherM of
-       Left litmonad -> case mf of
-         Nothing -> liftIO $ respond404 mnfResp -- file extension parse failed
-         Just f -> do
-           vmapLit <- execWriterT $ runVerbListenerT litmonad
-           continueLit f v (unVerbs vmapLit) mnfResp
+       Left litmonad -> maybe (liftIO $ respond404 mnfResp)
+                        (\f -> do
+                           vmapLit <- execWriterT $ runVerbListenerT litmonad
+                           continueLit f v (unVerbs vmapLit) mnfResp)
+                        mf
        Right predmonad -> do
          vmapPred <- execWriterT $ runVerbListenerT predmonad
          continuePred v (unVerbs vmapPred) mnfResp
-
 
     continueLit :: MonadIO m =>
                    FileExt
@@ -268,27 +267,27 @@ route h req respond = do
                 -> M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExtListenerT Response m ())
                 -> Maybe Response
                 -> m ResponseReceived
-    continueLit f v vmap mnfResp = case M.lookup v vmap of
-      Just (mreqbodyf, femonad) -> do
-        femap <- execWriterT $ runFileExtListenerT femonad
-        case lookupMin f $ unFileExts femap of
-          Just r -> do
-            case mreqbodyf of
-              Nothing              -> liftIO $ respond r
-              Just (reqbf,Nothing) -> do
-                body <- liftIO $ strictRequestBody req
-                (runReaderT $ reqbf) body
-                liftIO $ respond r
-              Just (reqbf,Just bl) -> do
-                case requestBodyLength req of
-                  KnownLength bl' -> if bl' <= bl
-                                       then do body <- liftIO $ strictRequestBody req
-                                               (runReaderT $ reqbf) body
-                                               liftIO $ respond r
-                                       else liftIO $ respond404 mnfResp
-                  _ -> liftIO $ respond404 mnfResp
-          Nothing -> liftIO $ respond404 mnfResp
-      Nothing -> liftIO $ respond404 mnfResp
+    continueLit f v vmap mnfResp =
+      let fail = liftIO $ respond404 mnfResp in
+      maybe fail (\(mreqbodyf, femonad) -> do
+          femap <- execWriterT $ runFileExtListenerT femonad
+          maybe fail (\r -> do
+              case mreqbodyf of
+                Nothing              -> liftIO $ respond r
+                Just (reqbf,Nothing) -> do
+                  body <- liftIO $ strictRequestBody req
+                  (runReaderT $ reqbf) body
+                  liftIO $ respond r
+                Just (reqbf,Just bl) -> do
+                  case requestBodyLength req of
+                    KnownLength bl' ->
+                      if bl' <= bl
+                      then do body <- liftIO $ strictRequestBody req
+                              (runReaderT $ reqbf) body
+                              liftIO $ respond r
+                      else fail
+                    _ -> fail) $
+            lookupMin f $ unFileExts femap) $ M.lookup v vmap
 
 
     continuePred :: MonadIO m =>
@@ -296,8 +295,9 @@ route h req respond = do
                  -> M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), Response)
                  -> Maybe Response
                  -> m ResponseReceived
-    continuePred v vmap mnfResp = case M.lookup v vmap of
-        Just (mreqbodyf, r) ->
+    continuePred v vmap mnfResp =
+      let fail = liftIO $ respond404 mnfResp in
+      maybe fail (\(mreqbodyf, r) ->
           case mreqbodyf of
             Nothing              -> liftIO $ respond r
             Just (reqbf,Nothing) -> do
@@ -306,13 +306,14 @@ route h req respond = do
               liftIO $ respond r
             Just (reqbf,Just bl) -> do
               case requestBodyLength req of
-                KnownLength bl' -> if bl' <= bl
-                                     then do body <- liftIO $ strictRequestBody req
-                                             (runReaderT $ reqbf) body
-                                             liftIO $ respond r
-                                     else liftIO $ respond404 mnfResp
-                _ -> liftIO $ respond404 mnfResp
-        Nothing -> liftIO $ respond404 mnfResp
+                KnownLength bl' ->
+                  if bl' <= bl
+                  then do body <- liftIO $ strictRequestBody req
+                          (runReaderT $ reqbf) body
+                          liftIO $ respond r
+                  else fail
+                _ -> fail
+          ) $ M.lookup v vmap
 
 
     respond404 :: Maybe Response -> IO ResponseReceived
