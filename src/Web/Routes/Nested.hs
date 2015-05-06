@@ -202,22 +202,20 @@ route h req respond = do
 
   notFoundBasic <- handleNotFound (Just Html) Get meitherNotFound
 
-  maybe (liftIO $ respond404 notFoundBasic)
-    (\v -> do
-      menf <- handleNotFound mFileext v meitherNotFound
+  maybe (liftIO $ respond404 notFoundBasic) (\v -> do
+    menf <- handleNotFound mFileext v meitherNotFound
+    let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
+        fail = liftIO $ respond404 menf
 
-      let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
-      maybe
-        (case pathInfo req of
-          [] -> liftIO $ respond404 menf
-          _  -> case trimFileExt $ last $ pathInfo req of
-            "index" -> maybe (liftIO $ respond404 menf)
-                         (\eitherM -> continue mFileext v eitherM menf)
-                         (P.lookup (init $ pathInfo req) rtrie)
-            _ -> liftIO $ respond404 menf
-        )
-        (\eitherM -> continue mFileext v eitherM menf)
-        (P.lookup cleanedPathInfo rtrie)
+    maybe (case pathInfo req of
+        [] -> fail
+        _  -> case trimFileExt $ last $ pathInfo req of
+          "index" -> maybe fail
+                       (\eitherM -> continue mFileext v eitherM menf)
+                       (P.lookup (init $ pathInfo req) rtrie)
+          _ -> fail
+      ) (\eitherM -> continue mFileext v eitherM menf)
+      (P.lookup cleanedPathInfo rtrie)
     ) mMethod
 
   where
@@ -252,10 +250,9 @@ route h req respond = do
              -> Maybe Response
              -> m ResponseReceived
     continue mf v eitherM mnfResp = case eitherM of
-       Left litmonad -> maybe (liftIO $ respond404 mnfResp)
-                        (\f -> do
-                           vmapLit <- execWriterT $ runVerbListenerT litmonad
-                           continueLit f v (unVerbs vmapLit) mnfResp)
+       Left litmonad -> maybe (liftIO $ respond404 mnfResp) (\f -> do
+                          vmapLit <- execWriterT $ runVerbListenerT litmonad
+                          continueLit f v (unVerbs vmapLit) mnfResp)
                         mf
        Right predmonad -> do
          vmapPred <- execWriterT $ runVerbListenerT predmonad
