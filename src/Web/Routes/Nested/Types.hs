@@ -26,6 +26,7 @@ module Web.Routes.Nested.Types
   ) where
 
 import Data.Attoparsec.Text
+import Text.Regex
 import Web.Routes.Nested.Types.UrlChunks
 import qualified Data.Text as T
 import           Data.List.NonEmpty
@@ -57,6 +58,7 @@ instance Extend (EitherUrlChunk  'Nothing) (RUPTrie T.Text a) (RUPTrie T.Text a)
 
 instance Extend (EitherUrlChunk ('Just r)) (RUPTrie T.Text (r -> a)) (RUPTrie T.Text a) where
   extend ((:~) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (eitherToMaybe . parseOnly q) mx xs]
+  extend ((:*) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (matchRegex q . T.unpack)     mx xs]
 
 
 class Extrude chunks start result | chunks start -> result where
@@ -79,6 +81,7 @@ restAreLits Root = False
 restAreLits (Cons ((:=) _) Root) = True
 restAreLits (Cons ((:=) _) us)   = restAreLits us
 restAreLits (Cons _ _) = False
+
 
 class ToNE chunks where
   toNE :: chunks -> NonEmpty T.Text
