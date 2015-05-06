@@ -102,11 +102,8 @@ handleLit ts vl Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
 handleLit ts vl (Just cs) = do
   ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
+  HandlerT $ tell (extrude ts $ Rooted (Just vl) ctrie, mempty)
 
-  HandlerT $ tell $ let
-                      child = extrude ts $ Rooted (Just vl) ctrie
-                    in
-                    (child, mempty)
 
 -- | For routes ending with a parser.
 handleParse :: ( Monad m
@@ -132,11 +129,7 @@ handleParse ts vl Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
 handleParse ts vl (Just cs) = do
   ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
-
-  HandlerT $ tell $ let
-                      child = extrude ts $ Rooted (Just vl) ctrie
-                    in
-                    (child, mempty)
+  HandlerT $ tell (extrude ts $ Rooted (Just vl) ctrie, mempty)
 
 
 notFoundLit :: ( Monad m
@@ -162,11 +155,7 @@ notFoundLit ts vl Nothing = do
   HandlerT $ tell (mempty, singleton ts vl)
 notFoundLit ts vl (Just cs) = do
   ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
-
-  HandlerT $ tell $ let
-                      child = extrude ts $ Rooted (Just vl) ctrie
-                    in
-                    (mempty, child)
+  HandlerT $ tell (mempty, extrude ts $ Rooted (Just vl) ctrie)
 
 
 notFoundParse :: ( Monad m
@@ -192,11 +181,7 @@ notFoundParse ts vl Nothing = do
   HandlerT $ tell (mempty, singleton ts vl)
 notFoundParse ts vl (Just cs) = do
   ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
-
-  HandlerT $ tell $ let
-                      child = extrude ts $ Rooted (Just vl) ctrie
-                    in
-                    (mempty, child)
+  HandlerT $ tell (mempty, extrude ts $ Rooted (Just vl) ctrie)
 
 
 -- | Turns a @HandlerT@ into a Wai @Application@
@@ -217,44 +202,47 @@ route h req respond = do
 
   notFoundBasic <- handleNotFound (Just Html) Get meitherNotFound
 
-  case mMethod of
-    Just v -> do
+  maybe (liftIO $ respond404 notFoundBasic)
+    (\v -> do
       menf <- handleNotFound mFileext v meitherNotFound
 
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
-      case P.lookup cleanedPathInfo rtrie of
-        Just eitherM -> continue mFileext v eitherM menf
-        Nothing  -> case pathInfo req of
+      maybe
+        (case pathInfo req of
           [] -> liftIO $ respond404 menf
           _  -> case trimFileExt $ last $ pathInfo req of
-            "index" -> case P.lookup (init $ pathInfo req) rtrie of
-              Just eitherM -> continue mFileext v eitherM menf
-              Nothing -> liftIO $ respond404 menf
+            "index" -> maybe (liftIO $ respond404 menf)
+                         (\eitherM -> continue mFileext v eitherM menf)
+                         (P.lookup (init $ pathInfo req) rtrie)
             _ -> liftIO $ respond404 menf
-    _ -> liftIO $ respond404 notFoundBasic
+        )
+        (\eitherM -> continue mFileext v eitherM menf)
+        (P.lookup cleanedPathInfo rtrie)
+    ) mMethod
 
   where
+    onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
+    onJustM f mx = maybe (return Nothing) f mx
+
+
     handleNotFound :: MonadIO m =>
                       Maybe FileExt
                    -> Verb
                    -> Maybe (EitherResponse z m)
                    -> m (Maybe Response)
-    handleNotFound mf v meitherNotFound = case meitherNotFound of
-      Just (Left litmonad) -> case mf of
-        Nothing -> return Nothing
-        Just f -> do
-          vmapLit <- execWriterT $ runVerbListenerT litmonad
-          case M.lookup v (unVerbs vmapLit) of
-            Just (_, femonad) -> do
-              femap <- execWriterT $ runFileExtListenerT femonad
-              return $ lookupMin f $ unFileExts femap
-            Nothing -> return Nothing
-      Just (Right predmonad) -> do
-        vmapPred <- execWriterT $ runVerbListenerT predmonad
-        case M.lookup v (unVerbs vmapPred) of
-          Just (_, r) -> return $ Just r
-          Nothing -> return Nothing
-      Nothing -> return Nothing
+    handleNotFound mf v meitherNotFound =
+      let handleEither (Left litmonad) =
+            onJustM (\f -> do
+                vmapLit <- execWriterT $ runVerbListenerT litmonad
+                onJustM (\(_, femonad) -> do
+                    femap <- execWriterT $ runFileExtListenerT femonad
+                    return $ lookupMin f $ unFileExts femap) $
+                  M.lookup v $ unVerbs vmapLit) mf
+          handleEither (Right predmonad) = do
+            vmapPred <- execWriterT $ runVerbListenerT predmonad
+            onJustM (\(_, r) -> return $ Just r) $ M.lookup v $ unVerbs vmapPred
+      in
+      onJustM handleEither meitherNotFound
 
 
     continue :: MonadIO m =>
