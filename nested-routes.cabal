@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                0.3.2
+Version:                0.3.2.1
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -122,6 +122,7 @@ Library
                       , wai
                       , wai-extra
                       , http-types
+                      , http-media
                       , mtl
                       , transformers
                       , semigroups
@@ -135,7 +136,7 @@ Library
                       , attoparsec
                       , regex-compat
                       , pred-trie >= 0.1
-                      , poly-arity >= 0.0.3
+                      , poly-arity >= 0.0.4
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0

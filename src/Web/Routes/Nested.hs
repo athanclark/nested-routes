@@ -36,6 +36,7 @@ import           Web.Routes.Nested.FileExtListener
 import           Web.Routes.Nested.VerbListener
 
 import           Network.HTTP.Types
+import           Network.HTTP.Media
 import           Network.Wai
 
 import           Control.Applicative
@@ -193,6 +194,7 @@ route :: ( Functor m
       -> Request
       -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
+  liftIO $ print $ (return . parseContentType) =<< (Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req)
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
@@ -322,6 +324,17 @@ route h req respond = do
     lookupMin :: Ord k => k -> M.Map k a -> Maybe a
     lookupMin k map | all (k <) (M.keys map) = M.lookup (minimum $ M.keys map) map
                     | otherwise              = M.lookup k map
+
+    lookupProper :: FileExt -> M.Map FileExt a -> Maybe a
+    lookupProper k map = case M.lookup k map of
+      Nothing -> case M.lookup (feSequence k !! 0) map of
+        Nothing -> M.lookup (feSequence k !! 1) map
+        Just x  -> Just x
+      Just x  -> Just x
+      where
+        feSequence Html = [Text, Json]
+        feSequence Json = [Text, Html]
+        feSequence Text = [Json, Html]
 
     applyToLast :: (a -> a) -> [a] -> [a]
     applyToLast _ [] = []
