@@ -194,7 +194,7 @@ route :: ( Functor m
       -> Request
       -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
-  liftIO $ print $ (return . parseContentType) =<< (Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req)
+  -- liftIO $ print $ (return . parseContentType) =<< (Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req)
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
