@@ -10,6 +10,7 @@ module Web.Routes.Nested.Types.UrlChunks where
 
 import Data.Attoparsec.Text
 import Text.Regex
+import Data.String (IsString (..))
 import qualified Data.Text as T
 
 
@@ -21,6 +22,9 @@ data EitherUrlChunk (x :: Maybe *) where
 
 l :: T.Text -> EitherUrlChunk 'Nothing
 l = (:=)
+
+instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
+  fromString = l . T.pack
 
 p :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
 p = (:~)
