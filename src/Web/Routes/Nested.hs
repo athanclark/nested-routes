@@ -140,6 +140,7 @@ route :: ( Functor m
       -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
+  liftIO $ print rtrie
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
                          [] -> Just Html
@@ -148,10 +149,10 @@ route h req respond = do
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = fromMaybe Html mFileext
 
-  notFoundBasic <- handleNotFound acceptBS (Just Html) Get mnftrans
+  notFoundBasic <- handleNotFound acceptBS Html Get mnftrans
 
   maybe (liftIO $ respond404 notFoundBasic) (\v -> do
-    menf <- handleNotFound acceptBS mFileext v mnftrans
+    menf <- handleNotFound acceptBS fe v mnftrans
     let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
         fail = liftIO $ respond404 menf
 
@@ -159,10 +160,10 @@ route h req respond = do
         [] -> fail
         _  -> case trimFileExt $ last $ pathInfo req of
           "index" -> maybe fail
-                       (\eitherM -> continue acceptBS mFileext v eitherM menf)
+                       (\foundM -> continue acceptBS fe v foundM menf)
                        (P.lookup (init $ pathInfo req) rtrie)
           _ -> fail
-      ) (\foundM -> continue acceptBS mFileext v foundM menf)
+      ) (\foundM -> continue acceptBS fe v foundM menf)
       (P.lookup cleanedPathInfo rtrie)
     ) mMethod
 
@@ -173,45 +174,42 @@ route h req respond = do
 
     handleNotFound :: MonadIO m =>
                       Maybe B.ByteString
-                   -> Maybe FileExt
+                   -> FileExt
                    -> Verb
                    -> Maybe (ActionT z m ())
                    -> m (Maybe Response)
-    handleNotFound acceptBS mf v mnfcomp =
-      let handleEither nfcomp =
-            onJustM (\f -> do
-                vmapLit <- execWriterT $ runVerbListenerT nfcomp
-                onJustM (\(_, femonad) -> do
-                    femap <- execWriterT $ runFileExtListenerT femonad
-                    return $ lookupProper acceptBS f $ unFileExts femap
-                  ) $ M.lookup v $ unVerbs vmapLit
-                ) mf
+    handleNotFound acceptBS f v mnfcomp =
+      let handleEither nfcomp = do
+            vmapLit <- execWriterT $ runVerbListenerT nfcomp
+            onJustM (\(_, femonad) -> do
+                femap <- execWriterT $ runFileExtListenerT femonad
+                return $ lookupProper acceptBS f $ unFileExts femap
+              ) $ M.lookup v $ unVerbs vmapLit
       in
       onJustM handleEither mnfcomp
 
 
     continue :: MonadIO m =>
                 Maybe B.ByteString
-             -> Maybe FileExt
+             -> FileExt
              -> Verb
              -> ActionT z m ()
              -> Maybe Response
              -> m ResponseReceived
-    continue acceptBS mf v foundM mnfResp =
-       maybe (liftIO $ respond404 mnfResp) (\f -> do
-         vmapLit <- execWriterT $ runVerbListenerT foundM
-         continueLit acceptBS f v (unVerbs vmapLit) mnfResp)
-       mf
+    continue acceptBS f v foundM mnfResp = do
+      vmapLit <- execWriterT $ runVerbListenerT foundM
+      continueMap acceptBS f v (unVerbs vmapLit) mnfResp
 
-    continueLit :: MonadIO m =>
+    continueMap :: MonadIO m =>
                    Maybe B.ByteString
                 -> FileExt
                 -> Verb
                 -> M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExtListenerT Response m ())
                 -> Maybe Response
                 -> m ResponseReceived
-    continueLit acceptBS f v vmap mnfResp =
-      let fail = liftIO $ respond404 mnfResp in
+    continueMap acceptBS f v vmap mnfResp = do
+      let fail = liftIO $ respond404 mnfResp
+
       maybe fail (\(mreqbodyf, femonad) -> do
           femap <- execWriterT $ runFileExtListenerT femonad
           maybe fail (\r -> do
@@ -230,7 +228,8 @@ route h req respond = do
                               liftIO $ respond r
                       else fail
                     _ -> fail) $
-            lookupProper acceptBS f $ unFileExts femap) $ M.lookup v vmap
+            lookupProper acceptBS f $ unFileExts femap) $
+        M.lookup v vmap
 
 
     respond404 :: Maybe Response -> IO ResponseReceived
@@ -252,6 +251,7 @@ route h req respond = do
         go map x Nothing = M.lookup x map
         go _ _  (Just y) = Just y
 
+    possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
     possibleFileExts fe accept = sortFE fe $ nub $ concat $
       catMaybes [ mapAccept [ ("application/json" :: B.ByteString, [Json])
                             , ("application/javascript" :: B.ByteString, [Json,JavaScript])

@@ -52,11 +52,4 @@ lucidOnlyHeaders = lucidOnlyStatusHeaders status200
 
 lucidOnlyStatusHeaders :: Monad m =>
              Status -> RequestHeaders -> L.HtmlT m () -> m Response
-lucidOnlyStatusHeaders s hs i = L.renderBST i >>= (return . bytestringOnlyStatus s hs)
-
-
-
-
-
-
-
+lucidOnlyStatusHeaders s hs i = liftM (bytestringOnlyStatus s hs) $ L.renderBST i
