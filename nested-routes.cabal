@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                1.0
+Version:                1.0.0.1
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -18,7 +18,8 @@ Description:
   <https://hackage.haskell.org/package/spock Spock>, but we
   can also embed
   <https://hackage.haskell.org/package/attoparsec Attoparsec>
-  parsers /directly/ in our routes, with our handlers
+  parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions>
+  /directly/ in our routes, with our handlers
   reflecting their results. As an example:
   .
   > router :: Application

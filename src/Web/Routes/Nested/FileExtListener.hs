@@ -2,7 +2,7 @@ module Web.Routes.Nested.FileExtListener
   ( module X
   ) where
 
-import Web.Routes.Nested.FileExtListener.Types as X hiding (FileExt)
+import Web.Routes.Nested.FileExtListener.Types as X hiding (FileExt (..))
 import Web.Routes.Nested.FileExtListener.Builder as X
 import Web.Routes.Nested.FileExtListener.ByteString as X
 import Web.Routes.Nested.FileExtListener.Blaze as X
