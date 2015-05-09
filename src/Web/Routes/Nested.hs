@@ -31,6 +31,7 @@ module Web.Routes.Nested
 
 import           Web.Routes.Nested.Types
 import           Web.Routes.Nested.FileExtListener
+import           Web.Routes.Nested.FileExtListener.Types (FileExt)
 import           Web.Routes.Nested.VerbListener
 
 import           Network.HTTP.Types
@@ -140,7 +141,6 @@ route :: ( Functor m
       -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
-  liftIO $ print rtrie
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
                          [] -> Just Html
@@ -252,17 +252,25 @@ route h req respond = do
         go _ _  (Just y) = Just y
 
     possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
-    possibleFileExts fe accept = sortFE fe $ nub $ concat $
-      catMaybes [ mapAccept [ ("application/json" :: B.ByteString, [Json])
-                            , ("application/javascript" :: B.ByteString, [Json,JavaScript])
-                            ] accept
-                , mapAccept [ ("text/html" :: B.ByteString, [Html])
-                            ] accept
-                , mapAccept [ ("text/plain" :: B.ByteString, [Text])
-                            ] accept
-                , mapAccept [ ("text/css" :: B.ByteString, [Css])
-                            ] accept
-                ]
+    possibleFileExts fe accept =
+      let computed = sortFE fe $ nub $ concat $
+            catMaybes [ mapAccept [ ("application/json" :: B.ByteString, [Json])
+                                  , ("application/javascript" :: B.ByteString, [Json,JavaScript])
+                                  ] accept
+                      , mapAccept [ ("text/html" :: B.ByteString, [Html])
+                                  ] accept
+                      , mapAccept [ ("text/plain" :: B.ByteString, [Text])
+                                  ] accept
+                      , mapAccept [ ("text/css" :: B.ByteString, [Css])
+                                  ] accept
+                      ]
+
+          wildcard = concat $
+            catMaybes [ mapAccept [ ("*/*" :: B.ByteString, [Html,Text,Json,JavaScript,Css])
+                                  ] accept
+                      ]
+      in
+      if length wildcard /= 0 then wildcard else computed
 
     sortFE Html       xs = [Html, Text]             `intersect` xs
     sortFE JavaScript xs = [JavaScript, Text]       `intersect` xs

@@ -25,23 +25,23 @@ Description:
   > router = route handlers
   >   where
   >     handlers = do
-  >       handleLit o
-  >         (Left $ get $ text "home")
+  >       handle o
+  >         (get $ text "home")
   >         Nothing
-  >       handleLit ("foo" </> "bar")
-  >         (Left $ get $ text "foobar") $ Just $
-  >         handleParse (p ("baz",double))
-  >           (\d -> Right $ get $ textOnly $ LT.pack (show d) <> " bazs")
+  >       handle ("foo" </> "bar")
+  >         (get $ text "foobar") $ Just $
+  >         handle (p ("baz", double) </> o)
+  >           (\d -> get $ text $ LT.pack (show d) <> " bazs")
   >           Nothing
-  >       handleParse (p ("num",double))
-  >         (\d -> Right $ get $ textOnly $ LT.pack $ show d) $ Just $ do
-  >         handleLit "bar"
-  >            (\d -> Left $ get $ do
+  >       handle (p ("num",double) </> o)
+  >         (\d -> get $ text $ LT.pack $ show d) $ Just $ do
+  >         handle "bar"
+  >            (\d -> get $ do
   >                     text $ (LT.pack $ show d) <> " bars")
   >                     json $ (LT.pack $ show d) <> " bars!")
   >            Nothing
-  >         handleParse (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)"))
-  >            (\d e -> Right $ get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
+  >         handle (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o)
+  >            (\d e -> get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
   .
   The route specification syntax is a little strange right now - @l@ specifies
   a "literal chunk" of a handlable url (ie - @l \"foo\" \<\/\> l \"bar\" \<\/\> o@ would
@@ -51,56 +51,50 @@ Description:
   the end of a url string, and can be used alone in a handler to capture requests
   to the root path.
   .
-  Each route being handled needs some kind of content - that's where the @Either@
-  stuff comes in to play. For every parsed url chunk, the route expects a function
+  Each route being handled needs some kind of content. For every parsed url chunk,
+  the route expects a function
   of arity matching 1-for-1 with the parsed contents. For example, @\d -> ...@ in the
   demonstration above is such a function, where @d :: Double@.
   .
-  We use the @Either@ for a subtle reason - literal url strings may have a file
-  extension, while url strings ending with a parser would not. @get@, @post@, etc.
-  are all monadic expressions, accumulating a @Map@ for HTTP verbs, likewise with
-  @text@, @lucid@, @json@, @bytestring@ etc., where they may also match a particular
-  file extension. @textOnly@ and the other @-Only@ variants are not monadic, and
-  simply give us a convenient unwrapper. Basically, url paths ending with a literal
-  chunk are @Left@ and contain a @VerbListenerT z (FileExtListenerT Response m ()) m ()@,
-  while paths ending with a parser are @Right@ and contain @VerbListenerT z Response m ()@.
+  Internally, we match against both the file extension and Accept headers in the
+  HTTP request - the Accept header may override the file extension.
   .
   When we test our application:
   .
-  >  λ> curl localhost:3000/
+  >  λ> curl localhost:3000/ -H "Accept: text/plain, */*"
   >  ↪ "home"
   .
   requests may end with index
   .
-  >  λ> curl localhost:3000/index
+  >  λ> curl localhost:3000/index -H "Accept: text/plain, */*"
   >  ↪ "home"
   .
   and specify the file extension
   .
-  >  λ> curl localhost:3000/index.txt
+  >  λ> curl localhost:3000/index.txt -H "Accept: text/plain, */*"
   >  ↪ "home"
   .
   each responding with the "closest" available file type
   .
-  >  λ> curl localhost:3000/index.html
+  >  λ> curl localhost:3000/index.html -H "Accept: text/html, */*"
   >  ↪ "home"
   .
-  >  λ> curl localhost:3000/foo/bar
+  >  λ> curl localhost:3000/foo/bar -H "Accept: text/plain, */*"
   >  ↪ "foobar"
   .
-  >  λ> curl localhost:3000/foo/bar.txt
+  >  λ> curl localhost:3000/foo/bar.txt -H "Accept: text/plain, */*"
   >  ↪ "foobar"
   .
-  >  λ> curl localhost:3000/foo/bar/5678.5678
+  >  λ> curl localhost:3000/foo/bar/5678.5678 -H "Accept: text/plain, */*"
   >  ↪ "5678.5678 bazs"
   .
-  >  λ> curl localhost:3000/1234.1234
+  >  λ> curl localhost:3000/1234.1234 -H "Accept: text/plain, */*"
   >  ↪ "1234.1234"
   .
-  >  λ> curl localhost:3000/2e5
+  >  λ> curl localhost:3000/2e5 -H "Accept: text/plain, */*"
   >  ↪ "200000.0"
   .
-  >  λ> curl localhost:3000/1234.1234/bar
+  >  λ> curl localhost:3000/1234.1234/bar -H "Accept: text/plain, */*"
   >  ↪ "1234.1234 bars"
 
 Cabal-Version:          >= 1.10
