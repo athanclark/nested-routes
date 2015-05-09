@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/athanclark/nested-routes.png?label=ready&title=Ready)](https://waffle.io/athanclark/nested-routes)
 nested-routes
 =============
 
