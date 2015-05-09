@@ -19,20 +19,26 @@ import           Data.Traversable
 
 
 data FileExt = Html
+             | Css
+             | JavaScript
              | Json
              | Text
   deriving (Show, Eq, Ord)
 
 
 toExt :: T.Text -> Maybe FileExt
-toExt x | x `elem` htmls = Just Html
-        | x `elem` jsons = Just Json
-        | x `elem` texts = Just Text
-        | otherwise      = Nothing
+toExt x | x `elem` htmls       = Just Html
+        | x `elem` csss        = Just Css
+        | x `elem` javascripts = Just JavaScript
+        | x `elem` jsons       = Just Json
+        | x `elem` texts       = Just Text
+        | otherwise            = Nothing
   where
-    htmls = ["", ".htm", ".html"]
-    jsons = [".json"]
-    texts = [".txt"]
+    htmls       = [".htm", ".html"]
+    csss        = [".css"]
+    javascripts = [".js", ".javascript"]
+    jsons       = [".json"]
+    texts       = [".txt"]
 
 newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
   deriving (Show, Eq, Functor, Traversable)

@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 
+
 module Web.Routes.Nested.FileExtListener.Text where
 
 import           Web.Routes.Nested.FileExtListener.Types
+import           Web.Routes.Nested.FileExtListener.ByteString
 
 import           Data.Map
 import qualified Data.Text.Lazy                          as LT
@@ -12,35 +14,23 @@ import           Network.HTTP.Types                      (RequestHeaders,
                                                           Status, status200)
 import           Network.Wai
 
+import           Data.Composition
 import           Control.Monad.Writer
 
 
-
+-- | Uses @Text@ as the key in the map, and @"text/plain"@ as the content type.
 text :: Monad m => LT.Text -> FileExtListenerT Response m ()
-text i =
-  let r = responseLBS status200 [("Content-Type", "text/plain")] $
-            LT.encodeUtf8 i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton Text r
+text = textStatusHeaders status200 [("Content-Type", "text/plain")]
 
 textStatus :: Monad m => Status -> LT.Text -> FileExtListenerT Response m ()
-textStatus s i =
-  let r = responseLBS s [("Content-Type", "text/plain")] $
-            LT.encodeUtf8 i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton Text r
+textStatus s = textStatusHeaders s [("Content-Type", "text/plain")]
 
 textHeaders :: Monad m => RequestHeaders -> LT.Text -> FileExtListenerT Response m ()
-textHeaders hs i =
-  let r = responseLBS status200 hs $
-            LT.encodeUtf8 i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton Text r
+textHeaders = textStatusHeaders status200
 
 textStatusHeaders :: Monad m => Status -> RequestHeaders -> LT.Text -> FileExtListenerT Response m ()
 textStatusHeaders s hs i =
-  let r = responseLBS s hs $
-            LT.encodeUtf8 i in
+  let r = textOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
     FileExts $ singleton Text r
 
@@ -48,22 +38,13 @@ textStatusHeaders s hs i =
 
 
 textOnly :: LT.Text -> Response
-textOnly i =
-  responseLBS status200 [("Content-Type", "text/plain")] $ LT.encodeUtf8 i
+textOnly = textOnlyStatusHeaders status200 [("Content-Type", "text/plain")]
 
 textOnlyStatus :: Status -> LT.Text -> Response
-textOnlyStatus s i =
-  responseLBS s [("Content-Type", "text/plain")] $ LT.encodeUtf8 i
+textOnlyStatus s = textOnlyStatusHeaders s [("Content-Type", "text/plain")]
 
 textOnlyHeaders :: RequestHeaders -> LT.Text -> Response
-textOnlyHeaders hs i =
-  responseLBS status200 hs $ LT.encodeUtf8 i
+textOnlyHeaders = textOnlyStatusHeaders status200
 
 textOnlyStatusHeaders :: Status -> RequestHeaders -> LT.Text -> Response
-textOnlyStatusHeaders s hs i =
-  responseLBS s hs $ LT.encodeUtf8 i
-
-
-
-
-
+textOnlyStatusHeaders s hs i = bytestringOnlyStatus s hs $ LT.encodeUtf8 i

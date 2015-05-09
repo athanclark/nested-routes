@@ -10,28 +10,25 @@ import           Data.Map
 import           Network.HTTP.Types                      (RequestHeaders,
                                                           Status, status200)
 import           Network.Wai
+import qualified Network.Wai.Util                        as U
 
 import           Control.Monad.Writer
 
 
 -- | @ByteString@ is ambiguous - we need to know what @RequestHeaders@ and @FileExt@ should be associated.
 bytestring :: Monad m => FileExt -> RequestHeaders -> B.ByteString -> FileExtListenerT Response m ()
-bytestring e hs i =
-  let r = responseLBS status200 hs i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton e r
+bytestring e = bytestringStatus e status200
 
 bytestringStatus :: Monad m => FileExt -> Status -> RequestHeaders -> B.ByteString -> FileExtListenerT Response m ()
-bytestringStatus e s hs i =
-  let r = responseLBS s hs i in
+bytestringStatus e s hs i = do
+  r <- lift $ U.bytestring s hs i
   FileExtListenerT $ tell $
     FileExts $ singleton e r
 
 
 bytestringOnly :: RequestHeaders -> B.ByteString -> Response
-bytestringOnly = responseLBS status200
+bytestringOnly = bytestringOnlyStatus status200
 
 -- | The exact same thing as @Network.Wai.responseLBS@.
 bytestringOnlyStatus :: Status -> RequestHeaders -> B.ByteString -> Response
 bytestringOnlyStatus = responseLBS
-

@@ -7,7 +7,6 @@
   , RankNTypes
   , FlexibleInstances
   , UndecidableInstances
-  , OverlappingInstances
   , MultiParamTypeClasses
   , FunctionalDependencies
   , ConstraintKinds

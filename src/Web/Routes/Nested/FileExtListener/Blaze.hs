@@ -4,6 +4,7 @@
 module Web.Routes.Nested.FileExtListener.Blaze where
 
 import           Web.Routes.Nested.FileExtListener.Types
+import           Web.Routes.Nested.FileExtListener.ByteString
 
 import           Data.Map
 import qualified Data.Text.Lazy.Encoding                 as LT
@@ -16,51 +17,35 @@ import qualified Text.Blaze.Html.Renderer.Text           as H
 import           Control.Monad.Writer
 
 
-
+-- | Uses @Html@ as the key in the map, and @"text/html"@ as the content type.
 blaze :: Monad m => H.Html -> FileExtListenerT Response m ()
-blaze i =
-  let r = responseLBS status200 [("Content-Type", "text/html")] $
-            LT.encodeUtf8 $ H.renderHtml i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton Html r
-
-blazeHeaders :: Monad m => RequestHeaders -> H.Html -> FileExtListenerT Response m ()
-blazeHeaders hs i =
-  let r = responseLBS status200 hs $
-            LT.encodeUtf8 $ H.renderHtml i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton Html r
+blaze = blazeStatusHeaders status200 [("Content-Type", "text/html")]
 
 blazeStatus :: Monad m => Status -> H.Html -> FileExtListenerT Response m ()
-blazeStatus s i =
-  let r = responseLBS s [("Content-Type", "text/html")] $
-            LT.encodeUtf8 $ H.renderHtml i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton Html r
+blazeStatus s = blazeStatusHeaders s [("Content-Type", "text/html")]
+
+blazeHeaders :: Monad m => RequestHeaders -> H.Html -> FileExtListenerT Response m ()
+blazeHeaders = blazeStatusHeaders status200
 
 blazeStatusHeaders :: Monad m => Status -> RequestHeaders -> H.Html -> FileExtListenerT Response m ()
 blazeStatusHeaders s hs i =
-  let r = responseLBS s hs $
-            LT.encodeUtf8 $ H.renderHtml i in
+  let r = blazeOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
     FileExts $ singleton Html r
 
 
 
 blazeOnly :: H.Html -> Response
-blazeOnly i =
-  responseLBS status200 [("Content-Type", "text/html")] $ LT.encodeUtf8 $ H.renderHtml i
+blazeOnly = blazeOnlyStatusHeaders status200 [("Content-Type", "text/html")]
 
 blazeOnlyHeaders :: RequestHeaders -> H.Html -> Response
-blazeOnlyHeaders hs i =
-  responseLBS status200 hs $ LT.encodeUtf8 $ H.renderHtml i
+blazeOnlyHeaders = blazeOnlyStatusHeaders status200
 
 blazeOnlyStatus :: Status -> H.Html -> Response
-blazeOnlyStatus s i =
-  responseLBS s [("Content-Type", "text/html")] $ LT.encodeUtf8 $ H.renderHtml i
+blazeOnlyStatus s = blazeOnlyStatusHeaders s [("Content-Type", "text/html")]
 
 blazeOnlyStatusHeaders :: Status -> RequestHeaders -> H.Html -> Response
 blazeOnlyStatusHeaders s hs i =
-  responseLBS s hs $ LT.encodeUtf8 $ H.renderHtml i
+  bytestringOnlyStatus s hs $ LT.encodeUtf8 $ H.renderHtml i
 
 

@@ -17,21 +17,18 @@ import           Control.Monad.Writer
 -- | A builder is ambiguous, therefore we require @RequestHeaders@ and a @FileExt@ to be explicitly
 -- supplied.
 builder :: Monad m => FileExt -> RequestHeaders -> BU.Builder -> FileExtListenerT Response m ()
-builder e hs i =
-  let r = responseBuilder status200 hs i in
-  FileExtListenerT $ tell $
-    FileExts $ singleton e r
+builder e  = builderStatus e status200
 
 builderStatus :: Monad m => FileExt -> Status -> RequestHeaders -> BU.Builder -> FileExtListenerT Response m ()
 builderStatus e s hs i =
-  let r = responseBuilder s hs i in
+  let r = builderOnlyStatus s hs i in
   FileExtListenerT $ tell $
     FileExts $ singleton e r
 
 
 
 builderOnly :: RequestHeaders -> BU.Builder -> Response
-builderOnly = responseBuilder status200
+builderOnly = builderOnlyStatus status200
 
 -- | The exact same thing as @Network.Wai.responseBuilder@.
 builderOnlyStatus :: Status -> RequestHeaders -> BU.Builder -> Response

@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                0.3.2.1
+Version:                0.4
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -28,16 +28,20 @@ Description:
   >       handleLit o
   >         (Left $ get $ text "home")
   >         Nothing
-  >       handleLit (l "foo" </> l "bar" </> o)
+  >       handleLit ("foo" </> "bar")
   >         (Left $ get $ text "foobar") $ Just $
-  >         handleParse (p ("baz",double) </> o)
-  >           (\d -> Right $ get $ textOnly $ LT.pack (show d) `LT.append` " bazs")
+  >         handleParse (p ("baz",double))
+  >           (\d -> Right $ get $ textOnly $ LT.pack (show d) <> " bazs")
   >           Nothing
-  >       handleParse (p ("num",double) </> o)
-  >         (\d -> Right $ get $ textOnly $ LT.pack $ show d) $ Just $
-  >         handleLit (l "bar" </> o)
-  >            (\d -> Left $ get $ text $ (LT.pack $ show d) `LT.append` " bars")
+  >       handleParse (p ("num",double))
+  >         (\d -> Right $ get $ textOnly $ LT.pack $ show d) $ Just $ do
+  >         handleLit "bar"
+  >            (\d -> Left $ get $ do
+  >                     text $ (LT.pack $ show d) <> " bars")
+  >                     json $ (LT.pack $ show d) <> " bars!")
   >            Nothing
+  >         handleParse (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)"))
+  >            (\d e -> Right $ get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
   .
   The route specification syntax is a little strange right now - @l@ specifies
   a "literal chunk" of a handlable url (ie - @l \"foo\" \<\/\> l \"bar\" \<\/\> o@ would
@@ -118,13 +122,20 @@ Library
                         Web.Routes.Nested.FileExtListener.Blaze
                         Web.Routes.Nested.FileExtListener.ByteString
                         Web.Routes.Nested.FileExtListener.Lucid
+                        Web.Routes.Nested.FileExtListener.Clay
+                        Web.Routes.Nested.FileExtListener.Julius
+                        Web.Routes.Nested.FileExtListener.Lucius
+                        Web.Routes.Nested.FileExtListener.Cassius
   Build-Depends:        base >= 4.6 && < 5
                       , wai
                       , wai-extra
+                      , wai-util
                       , http-types
                       , http-media
                       , mtl
                       , transformers
+                      , witherable
+                      , composition
                       , semigroups
                       , constraints
                       , containers
@@ -132,6 +143,8 @@ Library
                       , aeson
                       , blaze-html
                       , lucid
+                      , shakespeare
+                      , clay
                       , bytestring
                       , attoparsec
                       , regex-compat
