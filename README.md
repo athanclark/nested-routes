@@ -22,19 +22,23 @@ router :: Application
 router = route handlers
   where
     handlers = do
-      handleLit o
-        (Left $ get $ text "home")
+      handle o
+        (get $ text "home")
         Nothing
-      handleLit (l "foo" </> l "bar" </> o)
-        (Left $ get $ text "foobar") $ Just $
-        handleParse (p ("baz",double) </> o)
-          (\d -> Right $ get $ textOnly $ LT.pack (show d) `LT.append` " bazs")
+      handle ("foo" </> "bar")
+        (get $ text "foobar") $ Just $
+        handle (p ("baz", double) </> o)
+          (\d -> get $ text $ LT.pack (show d) <> " bazs")
           Nothing
-      handleParse (p ("num",double) </> o)
-        (\d -> Right $ get $ textOnly $ LT.pack $ show d) $ Just $
-        handleLit (l "bar" </> o)
-           (\d -> Left $ get $ text $ (LT.pack $ show d) `LT.append` " bars")
+      handle (p ("num",double) </> o)
+        (\d -> get $ text $ LT.pack $ show d) $ Just $ do
+        handle "bar"
+           (\d -> get $ do
+                    text $ (LT.pack $ show d) <> " bars")
+                    json $ (LT.pack $ show d) <> " bars!")
            Nothing
+        handle (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o)
+           (\d e -> get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
 ```
 
 The route specification syntax is a little strange right now - `l` specifies                                          
