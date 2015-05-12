@@ -151,21 +151,22 @@ route h req respond = do
 
   notFoundBasic <- handleNotFound acceptBS Html Get mnftrans
 
-  maybe (liftIO $ respond404 notFoundBasic) (\v -> do
-    menf <- handleNotFound acceptBS fe v mnftrans
-    let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
-        fail = liftIO $ respond404 menf
+  case mMethod of
+    Nothing -> liftIO $ respond404 notFoundBasic
+    Just v  -> do
+      menf <- handleNotFound acceptBS fe v mnftrans
+      let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
+          fail = liftIO $ respond404 menf
 
-    maybe (case pathInfo req of
-        [] -> fail
-        _  -> case trimFileExt $ last $ pathInfo req of
-          "index" -> maybe fail
-                       (\foundM -> continue acceptBS fe v foundM menf)
-                       (P.lookup (init $ pathInfo req) rtrie)
-          _ -> fail
-      ) (\foundM -> continue acceptBS fe v foundM menf)
-      (P.lookup cleanedPathInfo rtrie)
-    ) mMethod
+      case P.lookup cleanedPathInfo rtrie of
+        Nothing -> case pathInfo req of
+          [] -> fail
+          _  -> case trimFileExt $ last $ pathInfo req of
+                  "index" -> maybe fail
+                               (\foundM -> continue acceptBS fe v foundM menf) $
+                               P.lookup (init $ pathInfo req) rtrie
+                  _ -> fail
+        Just foundM -> continue acceptBS fe v foundM menf
 
   where
     onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
@@ -182,9 +183,9 @@ route h req respond = do
       let handleEither nfcomp = do
             vmapLit <- execWriterT $ runVerbListenerT nfcomp
             onJustM (\(_, femonad) -> do
-                femap <- execWriterT $ runFileExtListenerT femonad
-                return $ lookupProper acceptBS f $ unFileExts femap
-              ) $ M.lookup v $ unVerbs vmapLit
+              femap <- execWriterT $ runFileExtListenerT femonad
+              return $ lookupProper acceptBS f $ unFileExts femap) $
+                M.lookup v $ unVerbs vmapLit
       in
       onJustM handleEither mnfcomp
 
@@ -240,11 +241,10 @@ route h req respond = do
 
     lookupProper :: Maybe B.ByteString -> FileExt -> M.Map FileExt a -> Maybe a
     lookupProper maccept k map =
-      let
-        attempts = maybe
-                     [Html,Text,Json,JavaScript,Css]
-                     (\accept -> possibleFileExts k accept)
-                     maccept
+      let attempts = maybe
+                       [Html,Text,Json,JavaScript,Css]
+                       (\accept -> possibleFileExts k accept)
+                       maccept
       in
       foldr (go map) Nothing attempts
       where
