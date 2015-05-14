@@ -25,6 +25,7 @@ module Web.Routes.Nested
   , HandlerT (..)
   , ActionT
   , handle
+  , parent
   , notFound
   , route
   ) where
@@ -96,22 +97,24 @@ handle ts mvl (Just cs) = do
   HandlerT $ tell (extrude ts $ Rooted mvl ctrie, mempty)
 handle _ Nothing Nothing = return ()
 
--- categorize :: ( Monad m
---           , Functor m
---           , cleanxs ~ OnlyJusts xs
---           , HasResult childType (ActionT z m ())
---           , ExpectArity cleanxs childType
---           , Singleton (UrlChunks xs)
---               childType
---               (RUPTrie T.Text result)
---           , Extrude (UrlChunks xs)
---               (RUPTrie T.Text childType)
---               (RUPTrie T.Text result)
---           , (ArityMinusTypeList childType cleanxs) ~ result
---           , childType ~ TypeListToArity cleanxs result
---           , LastIsNothing xs
---           ) =>
--- categorize
+parent :: ( Monad m
+          , Functor m
+          , cleanxs ~ OnlyJusts xs
+          , Singleton (UrlChunks xs)
+              childType
+              (RUPTrie T.Text result)
+          , Extrude (UrlChunks xs)
+              (RUPTrie T.Text childType)
+              (RUPTrie T.Text result)
+          , (ArityMinusTypeList childType cleanxs) ~ result
+          , childType ~ TypeListToArity cleanxs result
+          ) =>
+          UrlChunks xs -- ^ Path to match against
+       -> HandlerT z childType m () -- ^ Potential child routes
+       -> HandlerT z result m ()
+parent ts cs = do
+  ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
+  HandlerT $ tell (extrude ts $ Rooted Nothing ctrie, mempty)
 
 notFound :: ( Monad m
             , Functor m
