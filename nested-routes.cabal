@@ -20,29 +20,31 @@ Description:
   <https://hackage.haskell.org/package/attoparsec Attoparsec>
   parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions>
   /directly/ in our routes, with our handlers
-  reflecting their results. As an example:
+  reflecting their results. You can find more information on the <https://www.fpcomplete.com/user/AthanClark/nested-routes demo>.
+  .
+  As an example:
   .
   > router :: Application
   > router = route handlers
   >   where
   >     handlers = do
   >       handle o
-  >         (get $ text "home")
+  >         (Just $ get $ text "home")
   >         Nothing
   >       handle ("foo" </> "bar")
-  >         (get $ text "foobar") $ Just $
+  >         (Just $ get $ text "foobar") $ Just $
   >         handle (p ("baz", double) </> o)
-  >           (\d -> get $ text $ LT.pack (show d) <> " bazs")
+  >           (Just $ \d -> get $ text $ LT.pack (show d) <> " bazs")
   >           Nothing
   >       handle (p ("num",double) </> o)
-  >         (\d -> get $ text $ LT.pack $ show d) $ Just $ do
+  >         (Just $ \d -> get $ text $ LT.pack $ show d) $ Just $ do
   >         handle "bar"
-  >            (\d -> get $ do
+  >            (Just $ \d -> get $ do
   >                     text $ (LT.pack $ show d) <> " bars")
   >                     json $ (LT.pack $ show d) <> " bars!")
   >            Nothing
   >         handle (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o)
-  >            (\d e -> get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
+  >            (Just $ \d e -> get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
   .
   The route specification syntax is a little strange right now - @l@ specifies
   a "literal chunk" of a handlable url (ie - @l \"foo\" \<\/\> l \"bar\" \<\/\> o@ would

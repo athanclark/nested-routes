@@ -70,15 +70,6 @@ instance MonadTrans (HandlerT z x) where
 
 type ActionT z m a = VerbListenerT z (FileExtListenerT Response m a) m a
 
-type family LastIsNothing (xs :: [Maybe *]) :: Constraint where
-  LastIsNothing '[] = ()
-  LastIsNothing ('Nothing ': '[]) = ()
-  LastIsNothing (x ': xs) = LastIsNothing xs
-
-type family LastIsJust (xs :: [Maybe *]) :: Constraint where
-  LastIsJust (('Just x) ': '[]) = ()
-  LastIsJust (x ': xs) = LastIsJust xs
-
 -- | For routes ending with a literal.
 handle :: ( Monad m
           , Functor m
@@ -93,7 +84,6 @@ handle :: ( Monad m
               (RUPTrie T.Text result)
           , (ArityMinusTypeList childType cleanxs) ~ result
           , childType ~ TypeListToArity cleanxs result
-          , LastIsNothing xs
           ) =>
           UrlChunks xs -- ^ Path to match against
        -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
@@ -106,6 +96,22 @@ handle ts mvl (Just cs) = do
   HandlerT $ tell (extrude ts $ Rooted mvl ctrie, mempty)
 handle _ Nothing Nothing = return ()
 
+-- categorize :: ( Monad m
+--           , Functor m
+--           , cleanxs ~ OnlyJusts xs
+--           , HasResult childType (ActionT z m ())
+--           , ExpectArity cleanxs childType
+--           , Singleton (UrlChunks xs)
+--               childType
+--               (RUPTrie T.Text result)
+--           , Extrude (UrlChunks xs)
+--               (RUPTrie T.Text childType)
+--               (RUPTrie T.Text result)
+--           , (ArityMinusTypeList childType cleanxs) ~ result
+--           , childType ~ TypeListToArity cleanxs result
+--           , LastIsNothing xs
+--           ) =>
+-- categorize
 
 notFound :: ( Monad m
             , Functor m
