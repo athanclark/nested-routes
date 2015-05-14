@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                2.1.0
+Version:                2.2.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -145,7 +145,7 @@ Library
                       , bytestring
                       , attoparsec
                       , regex-compat
-                      , pred-trie >= 0.1
+                      , pred-trie >= 0.2
                       , poly-arity >= 0.0.4
 
 Test-Suite spec
@@ -157,8 +157,29 @@ Test-Suite spec
   Main-Is:              Spec.hs
   Build-Depends:        base
                       , hspec
-                      , QuickCheck
-                      , quickcheck-instances
+                      , hspec-wai
+                      , shakespeare
+                      , lucid
+                      , attoparsec
+                      , regex-compat
+                      , containers
+                      , composition
+                      , semigroups
+                      , text
+                      , aeson
+                      , wai-util
+                      , blaze-html
+                      , bytestring
+                      , poly-arity
+                      , witherable
+                      , constraints
+                      , pred-trie
+                      , mtl
+                      , wai
+                      , warp
+                      , transformers
+                      , http-media
+                      , http-types
 
 Source-Repository head
   Type:                 git

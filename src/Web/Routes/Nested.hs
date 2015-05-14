@@ -93,7 +93,7 @@ handle :: ( Monad m
 handle ts (Just vl) Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
 handle ts mvl (Just cs) = do
-  ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
+  (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
   HandlerT $ tell (extrude ts $ Rooted mvl ctrie, mempty)
 handle _ Nothing Nothing = return ()
 
@@ -113,7 +113,7 @@ parent :: ( Monad m
        -> HandlerT z childType m () -- ^ Potential child routes
        -> HandlerT z result m ()
 parent ts cs = do
-  ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
+  (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
   HandlerT $ tell (extrude ts $ Rooted Nothing ctrie, mempty)
 
 notFound :: ( Monad m
@@ -134,10 +134,10 @@ notFound :: ( Monad m
          -> Maybe childType
          -> Maybe (HandlerT z childType m ())
          -> HandlerT z result m ()
-notFound ts (Just vl) Nothing = do
+notFound ts (Just vl) Nothing =
   HandlerT $ tell (mempty, singleton ts vl)
 notFound ts mvl (Just cs) = do
-  ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
+  (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
   HandlerT $ tell (mempty, extrude ts $ Rooted mvl ctrie)
 notFound _ Nothing Nothing = return ()
 
@@ -169,7 +169,7 @@ route h req respond = do
       let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
           fail = liftIO $ respond404 menf
 
-      case P.lookup cleanedPathInfo rtrie of
+      case P.lookupWithL trimFileExt (pathInfo req) rtrie of
         Nothing -> case pathInfo req of
           [] -> fail
           _  -> case trimFileExt $ last $ pathInfo req of
@@ -181,7 +181,7 @@ route h req respond = do
 
   where
     onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
-    onJustM f mx = maybe (return Nothing) f mx
+    onJustM = maybe (return Nothing)
 
 
     handleNotFound :: MonadIO m =>
@@ -224,25 +224,24 @@ route h req respond = do
 
       maybe fail (\(mreqbodyf, femonad) -> do
           femap <- execWriterT $ runFileExtListenerT femonad
-          maybe fail (\r -> do
+          maybe fail (\r ->
               case mreqbodyf of
                 Nothing              -> liftIO $ respond r
-                Just (reqbf,Nothing) -> do
-                  body <- liftIO $ strictRequestBody req
-                  (runReaderT $ reqbf) body
-                  liftIO $ respond r
-                Just (reqbf,Just bl) -> do
+                Just (reqbf,Nothing) -> handleUpload req reqbf respond r
+                Just (reqbf,Just bl) ->
                   case requestBodyLength req of
                     KnownLength bl' ->
                       if bl' <= bl
-                      then do body <- liftIO $ strictRequestBody req
-                              (runReaderT $ reqbf) body
-                              liftIO $ respond r
+                      then handleUpload req reqbf respond r
                       else fail
                     _ -> fail) $
             lookupProper acceptBS f $ unFileExts femap) $
         M.lookup v vmap
 
+    handleUpload req reqbf respond r = do
+      body <- liftIO $ strictRequestBody req
+      runReaderT reqbf body
+      liftIO $ respond r
 
     respond404 :: Maybe Response -> IO ResponseReceived
     respond404 mr = respond $ fromMaybe plain404 mr
@@ -254,7 +253,7 @@ route h req respond = do
     lookupProper maccept k map =
       let attempts = maybe
                        [Html,Text,Json,JavaScript,Css]
-                       (\accept -> possibleFileExts k accept)
+                       (possibleFileExts k)
                        maccept
       in
       foldr (go map) Nothing attempts
@@ -281,7 +280,7 @@ route h req respond = do
                                   ] accept
                       ]
       in
-      if length wildcard /= 0 then wildcard else computed
+      if not (null wildcard) then wildcard else computed
 
     sortFE Html       xs = [Html, Text]             `intersect` xs
     sortFE JavaScript xs = [JavaScript, Text]       `intersect` xs
@@ -291,18 +290,18 @@ route h req respond = do
 
     applyToLast :: (a -> a) -> [a] -> [a]
     applyToLast _ [] = []
-    applyToLast f (x:[]) = f x : []
+    applyToLast f [x] = [f x]
     applyToLast f (x:xs) = x : applyToLast f xs
 
     trimFileExt :: T.Text -> T.Text
-    trimFileExt s = if (T.unpack s) `endsWithAny` possibleExts
+    trimFileExt s = if T.unpack s `endsWithAny` possibleExts
                     then T.pack $ takeWhile (/= '.') $ T.unpack s
                     else s
       where
         possibleExts = [ ".html",".htm",".txt",".json",".lucid"
                        , ".julius",".css",".cassius",".lucius"
                        ]
-        endsWithAny s xs = (dropWhile (/= '.') s) `elem` xs
+        endsWithAny s xs = dropWhile (/= '.') s `elem` xs
 
     httpMethodToMSym :: Method -> Maybe Verb
     httpMethodToMSym x | x == methodGet    = Just Get
