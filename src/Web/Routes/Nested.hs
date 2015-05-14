@@ -96,14 +96,15 @@ handle :: ( Monad m
           , LastIsNothing xs
           ) =>
           UrlChunks xs -- ^ Path to match against
-       -> childType -- ^ Possibly a function, ending in @ActionT z m ()@.
+       -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
        -> Maybe (HandlerT z childType m ()) -- ^ Potential child routes
        -> HandlerT z result m ()
-handle ts vl Nothing =
+handle ts (Just vl) Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
-handle ts vl (Just cs) = do
+handle ts mvl (Just cs) = do
   ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
-  HandlerT $ tell (extrude ts $ Rooted (Just vl) ctrie, mempty)
+  HandlerT $ tell (extrude ts $ Rooted mvl ctrie, mempty)
+handle _ Nothing Nothing = return ()
 
 
 notFound :: ( Monad m
@@ -121,14 +122,15 @@ notFound :: ( Monad m
             , childType ~ TypeListToArity cleanxs result
             ) =>
             UrlChunks xs
-         -> childType
+         -> Maybe childType
          -> Maybe (HandlerT z childType m ())
          -> HandlerT z result m ()
-notFound ts vl Nothing = do
+notFound ts (Just vl) Nothing = do
   HandlerT $ tell (mempty, singleton ts vl)
-notFound ts vl (Just cs) = do
+notFound ts mvl (Just cs) = do
   ((Rooted _ ctrie),_) <- lift $ execWriterT $ runHandler cs
-  HandlerT $ tell (mempty, extrude ts $ Rooted (Just vl) ctrie)
+  HandlerT $ tell (mempty, extrude ts $ Rooted mvl ctrie)
+notFound _ Nothing Nothing = return ()
 
 
 -- | Turns a @HandlerT@ into a Wai @Application@
