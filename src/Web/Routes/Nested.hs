@@ -58,13 +58,10 @@ import           Data.List
 import Data.Function.Poly
 
 
-newtype HandlerT z x m a = HandlerT
+newtype HandlerT x m a = HandlerT
   { runHandler :: WriterT ( RUPTrie T.Text x
                           , RUPTrie T.Text x ) m a }
-  deriving (Functor, Applicative, Monad, MonadIO)
-
-instance MonadTrans (HandlerT z x) where
-  lift ma = HandlerT $ lift ma
+  deriving (Functor, Applicative, Monad, MonadIO, MonadTrans)
 
 type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 
@@ -84,8 +81,8 @@ handle :: ( Monad m
           , childType ~ TypeListToArity cleanxs result
           ) => UrlChunks xs -- ^ Path to match against
             -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
-            -> Maybe (HandlerT z childType m ()) -- ^ Potential child routes
-            -> HandlerT z result m ()
+            -> Maybe (HandlerT childType m ()) -- ^ Potential child routes
+            -> HandlerT result m ()
 handle ts (Just vl) Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
 handle ts mvl (Just cs) = do
@@ -105,8 +102,8 @@ parent :: ( Monad m
           , (ArityMinusTypeList childType cleanxs) ~ result
           , childType ~ TypeListToArity cleanxs result
           ) => UrlChunks xs
-            -> HandlerT z childType m ()
-            -> HandlerT z result m ()
+            -> HandlerT childType m ()
+            -> HandlerT result m ()
 parent ts cs = do
   (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
   HandlerT $ tell (extrude ts $ Rooted Nothing ctrie, mempty)
@@ -126,8 +123,8 @@ notFound :: ( Monad m
             , childType ~ TypeListToArity cleanxs result
             ) => UrlChunks xs
               -> Maybe childType
-              -> Maybe (HandlerT z childType m ())
-              -> HandlerT z result m ()
+              -> Maybe (HandlerT childType m ())
+              -> HandlerT result m ()
 notFound ts (Just vl) Nothing =
   HandlerT $ tell (mempty, singleton ts vl)
 notFound ts mvl (Just cs) = do
@@ -140,7 +137,7 @@ notFound _ Nothing Nothing = return ()
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) => HandlerT z (ActionT m ()) m a -- ^ Assembled @handle@ calls
+         ) => HandlerT (ActionT m ()) m a -- ^ Assembled @handle@ calls
            -> Request
            -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
