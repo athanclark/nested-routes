@@ -25,7 +25,7 @@ module Web.Routes.Nested
 import           Web.Routes.Nested.Types as X
 import           Web.Routes.Nested.FileExtListener as X
 import           Web.Routes.Nested.FileExtListener.Types as X
-import           Web.Routes.Nested.VerbListener
+import           Web.Routes.Nested.VerbListener as X
 
 import           Network.HTTP.Types
 import           Network.HTTP.Media
