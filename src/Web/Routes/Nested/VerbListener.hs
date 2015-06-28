@@ -4,7 +4,6 @@
   , DeriveFoldable
   , GeneralizedNewtypeDeriving
   , ScopedTypeVariables
-  , StandaloneDeriving
   , MultiParamTypeClasses
   #-}
 
@@ -13,7 +12,6 @@ module Web.Routes.Nested.VerbListener where
 import           Control.Applicative hiding (empty)
 import           Control.Monad.Trans
 import           Control.Monad.Writer
-import           Control.Monad.Reader
 import           Data.Foldable
 import           Data.Traversable
 import           Data.Map.Lazy

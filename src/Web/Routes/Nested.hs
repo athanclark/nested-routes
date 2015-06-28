@@ -3,25 +3,17 @@
   , GADTs
   , GeneralizedNewtypeDeriving
   , ScopedTypeVariables
-  , StandaloneDeriving
   , TypeOperators
   , OverloadedStrings
-  , DataKinds
   , TupleSections
   , FlexibleContexts
-  , ConstraintKinds
-  , DataKinds
-  , KindSignatures
   , TypeFamilies
-  , RankNTypes
   , PolyKinds
   , UndecidableInstances
   #-}
 
 module Web.Routes.Nested
-  ( module Web.Routes.Nested.FileExtListener
-  , module Web.Routes.Nested.VerbListener
-  , module Web.Routes.Nested.Types
+  ( module X
   , HandlerT (..)
   , ActionT
   , handle
@@ -30,9 +22,9 @@ module Web.Routes.Nested
   , route
   ) where
 
-import           Web.Routes.Nested.Types
-import           Web.Routes.Nested.FileExtListener
-import           Web.Routes.Nested.FileExtListener.Types (FileExt (..))
+import           Web.Routes.Nested.Types as X
+import           Web.Routes.Nested.FileExtListener as X
+import           Web.Routes.Nested.FileExtListener.Types as X
 import           Web.Routes.Nested.VerbListener
 
 import           Network.HTTP.Types
@@ -43,7 +35,6 @@ import           Control.Applicative
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Writer
-import           Control.Monad.Reader
 import           Data.Trie.Pred.Unified
 import qualified Data.Trie.Pred.Unified            as P
 import qualified Data.Text                         as T
@@ -156,17 +147,16 @@ route h req respond = do
     Nothing -> liftIO $ respond404 notFoundBasic
     Just v  -> do
       menf <- handleNotFound acceptBS fe v mnftrans
-      let cleanedPathInfo = applyToLast trimFileExt $ pathInfo req
-          fail = liftIO $ respond404 menf
+      let failResp = liftIO $ respond404 menf
 
       case P.lookupWithL trimFileExt (pathInfo req) rtrie of
         Nothing -> case pathInfo req of
-          [] -> fail
+          [] -> failResp
           _  -> case trimFileExt $ last $ pathInfo req of
-                  "index" -> maybe fail
+                  "index" -> maybe failResp
                                (\foundM -> continue acceptBS fe v foundM menf) $
                                P.lookup (init $ pathInfo req) rtrie
-                  _ -> fail
+                  _ -> failResp
         Just foundM -> continue acceptBS fe v foundM menf
 
   where
@@ -210,11 +200,11 @@ route h req respond = do
                 -> Maybe Response
                 -> m ResponseReceived
     continueMap acceptBS f v vmap mnfResp = do
-      let fail = liftIO $ respond404 mnfResp
+      let failResp = liftIO $ respond404 mnfResp
 
-      maybe fail (\(mreqbodyf, femonad) -> do
+      maybe failResp (\(mreqbodyf, femonad) -> do
           femap <- execWriterT $ runFileExtListenerT femonad
-          maybe fail (\r ->
+          maybe failResp (\r ->
               case mreqbodyf of
                 Nothing              -> liftIO $ respond r
                 Just (reqbf,Nothing) -> handleUpload req reqbf respond r
@@ -223,8 +213,8 @@ route h req respond = do
                     KnownLength bl' ->
                       if bl' <= bl
                       then handleUpload req reqbf respond r
-                      else fail
-                    _ -> fail) $
+                      else failResp
+                    _ -> failResp) $
             lookupProper acceptBS f $ unFileExts femap) $
         M.lookup v vmap
 
@@ -240,16 +230,13 @@ route h req respond = do
     plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
     lookupProper :: Maybe B.ByteString -> FileExt -> M.Map FileExt a -> Maybe a
-    lookupProper maccept k map =
-      let attempts = maybe
-                       [Html,Text,Json,JavaScript,Css]
-                       (possibleFileExts k)
-                       maccept
-      in
-      foldr (go map) Nothing attempts
+    lookupProper maccept k xs =
+      let attempts = maybe [Html,Text,Json,JavaScript,Css]
+                       (possibleFileExts k) maccept
+      in foldr (go xs) Nothing attempts
       where
-        go map x Nothing = M.lookup x map
-        go _ _  (Just y) = Just y
+        go xs x Nothing = M.lookup x xs
+        go _ _ (Just y) = Just y
 
     possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
     possibleFileExts fe accept =
@@ -269,19 +256,13 @@ route h req respond = do
             catMaybes [ mapAccept [ ("*/*" :: B.ByteString, [Html,Text,Json,JavaScript,Css])
                                   ] accept
                       ]
-      in
-      if not (null wildcard) then wildcard else computed
+      in if not (null wildcard) then wildcard else computed
 
     sortFE Html       xs = [Html, Text]             `intersect` xs
     sortFE JavaScript xs = [JavaScript, Text]       `intersect` xs
     sortFE Json       xs = [Json, JavaScript, Text] `intersect` xs
     sortFE Css        xs = [Css, Text]              `intersect` xs
     sortFE Text       xs = [Text]                   `intersect` xs
-
-    applyToLast :: (a -> a) -> [a] -> [a]
-    applyToLast _ [] = []
-    applyToLast f [x] = [f x]
-    applyToLast f (x:xs) = x : applyToLast f xs
 
     trimFileExt :: T.Text -> T.Text
     trimFileExt s = if T.unpack s `endsWithAny` possibleExts

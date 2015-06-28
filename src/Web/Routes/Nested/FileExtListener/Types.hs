@@ -1,8 +1,9 @@
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE
+    DeriveFunctor
+  , DeriveTraversable
+  , GeneralizedNewtypeDeriving
+  , OverloadedStrings
+  #-}
 
 
 module Web.Routes.Nested.FileExtListener.Types where
