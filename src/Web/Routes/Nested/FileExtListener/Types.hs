@@ -41,17 +41,8 @@ toExt x | x `elem` htmls       = Just Html
     texts       = [".txt"]
 
 newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
-  deriving (Show, Eq, Functor, Traversable)
-
-deriving instance Monoid      (FileExts a)
-deriving instance Foldable     FileExts
-
+  deriving (Show, Eq, Monoid, Functor, Foldable, Traversable)
 
 newtype FileExtListenerT r m a =
   FileExtListenerT { runFileExtListenerT :: WriterT (FileExts r) m a }
-    deriving (Functor)
-
-deriving instance Applicative m => Applicative (FileExtListenerT r m)
-deriving instance Monad m =>       Monad       (FileExtListenerT r m)
-deriving instance MonadIO m =>     MonadIO     (FileExtListenerT r m)
-deriving instance                  MonadTrans  (FileExtListenerT r)
+    deriving (Functor, Applicative, Monad, MonadIO, MonadTrans)

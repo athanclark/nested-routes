@@ -61,21 +61,18 @@ import Data.Function.Poly
 newtype HandlerT z x m a = HandlerT
   { runHandler :: WriterT ( RUPTrie T.Text x
                           , RUPTrie T.Text x ) m a }
-  deriving (Functor)
+  deriving (Functor, Applicative, Monad, MonadIO)
 
-deriving instance Applicative m => Applicative (HandlerT z x m)
-deriving instance Monad m =>       Monad       (HandlerT z x m)
-deriving instance MonadIO m =>     MonadIO     (HandlerT z x m)
 instance MonadTrans (HandlerT z x) where
   lift ma = HandlerT $ lift ma
 
-type ActionT z m a = VerbListenerT z (FileExtListenerT Response m a) m a
+type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 
 -- | For routes ending with a literal.
 handle :: ( Monad m
           , Functor m
           , cleanxs ~ OnlyJusts xs
-          , HasResult childType (ActionT z m ())
+          , HasResult childType (ActionT m ())
           , ExpectArity cleanxs childType
           , Singleton (UrlChunks xs)
               childType
@@ -85,11 +82,10 @@ handle :: ( Monad m
               (RUPTrie T.Text result)
           , (ArityMinusTypeList childType cleanxs) ~ result
           , childType ~ TypeListToArity cleanxs result
-          ) =>
-          UrlChunks xs -- ^ Path to match against
-       -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
-       -> Maybe (HandlerT z childType m ()) -- ^ Potential child routes
-       -> HandlerT z result m ()
+          ) => UrlChunks xs -- ^ Path to match against
+            -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
+            -> Maybe (HandlerT z childType m ()) -- ^ Potential child routes
+            -> HandlerT z result m ()
 handle ts (Just vl) Nothing =
   HandlerT $ tell (singleton ts vl, mempty)
 handle ts mvl (Just cs) = do
@@ -108,10 +104,9 @@ parent :: ( Monad m
               (RUPTrie T.Text result)
           , (ArityMinusTypeList childType cleanxs) ~ result
           , childType ~ TypeListToArity cleanxs result
-          ) =>
-          UrlChunks xs -- ^ Path to match against
-       -> HandlerT z childType m () -- ^ Potential child routes
-       -> HandlerT z result m ()
+          ) => UrlChunks xs
+            -> HandlerT z childType m ()
+            -> HandlerT z result m ()
 parent ts cs = do
   (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
   HandlerT $ tell (extrude ts $ Rooted Nothing ctrie, mempty)
@@ -119,7 +114,7 @@ parent ts cs = do
 notFound :: ( Monad m
             , Functor m
             , cleanxs ~ OnlyJusts xs
-            , HasResult childType (ActionT z m ())
+            , HasResult childType (ActionT m ())
             , ExpectArity cleanxs childType
             , Singleton (UrlChunks xs)
                 childType
@@ -129,11 +124,10 @@ notFound :: ( Monad m
                 (RUPTrie T.Text result)
             , (ArityMinusTypeList childType cleanxs) ~ result
             , childType ~ TypeListToArity cleanxs result
-            ) =>
-            UrlChunks xs
-         -> Maybe childType
-         -> Maybe (HandlerT z childType m ())
-         -> HandlerT z result m ()
+            ) => UrlChunks xs
+              -> Maybe childType
+              -> Maybe (HandlerT z childType m ())
+              -> HandlerT z result m ()
 notFound ts (Just vl) Nothing =
   HandlerT $ tell (mempty, singleton ts vl)
 notFound ts mvl (Just cs) = do
@@ -146,10 +140,9 @@ notFound _ Nothing Nothing = return ()
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) =>
-         HandlerT z (ActionT z m ()) m a -- ^ Assembled @handle@ calls
-      -> Request
-      -> (Response -> IO ResponseReceived) -> m ResponseReceived
+         ) => HandlerT z (ActionT m ()) m a -- ^ Assembled @handle@ calls
+           -> Request
+           -> (Response -> IO ResponseReceived) -> m ResponseReceived
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
@@ -188,7 +181,7 @@ route h req respond = do
                       Maybe B.ByteString
                    -> FileExt
                    -> Verb
-                   -> Maybe (ActionT z m ())
+                   -> Maybe (ActionT m ())
                    -> m (Maybe Response)
     handleNotFound acceptBS f v mnfcomp =
       let handleEither nfcomp = do
@@ -205,7 +198,7 @@ route h req respond = do
                 Maybe B.ByteString
              -> FileExt
              -> Verb
-             -> ActionT z m ()
+             -> ActionT m ()
              -> Maybe Response
              -> m ResponseReceived
     continue acceptBS f v foundM mnfResp = do
@@ -216,7 +209,7 @@ route h req respond = do
                    Maybe B.ByteString
                 -> FileExt
                 -> Verb
-                -> M.Map Verb (Maybe (ReaderT BL.ByteString m z, Maybe BodyLength), FileExtListenerT Response m ())
+                -> M.Map Verb (Maybe (BL.ByteString -> m (), Maybe BodyLength), FileExtListenerT Response m ())
                 -> Maybe Response
                 -> m ResponseReceived
     continueMap acceptBS f v vmap mnfResp = do
@@ -240,7 +233,7 @@ route h req respond = do
 
     handleUpload req reqbf respond r = do
       body <- liftIO $ strictRequestBody req
-      runReaderT reqbf body
+      reqbf body
       liftIO $ respond r
 
     respond404 :: Maybe Response -> IO ResponseReceived

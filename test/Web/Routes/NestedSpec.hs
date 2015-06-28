@@ -4,22 +4,30 @@
 
 module Web.Routes.NestedSpec (main, spec) where
 
-import Web.Routes.Nested
+import Web.Routes.Nested as N
 import Lucid hiding (with)
 import Text.Lucius
 import Network.Wai.Handler.Warp
+import Network.Wai (Application)
 
 import Test.Hspec
-import Test.Hspec.Wai
+import Test.Hspec.Wai as HW
+
+import Control.Monad
 
 
 main :: IO ()
 main = hspec spec
 
-withApp = with . run 3000 . route
+withApp = withApplication . route
 
 spec :: Spec
-spec = do
-  describe "File Extensions" $ do
-    it "should lookup literally" $ do
-      "foo" == "foo"
+spec =
+  describe "HTTP Verbs" $
+    forM_ [ ("GET", N.get, HW.get)
+          , ("DELETE", N.delete, HW.delete)
+          ] $ \(method, verb, makeRequest) ->
+              describe method $
+                withApp (handle o (Just $ verb $ text "") Nothing) $
+                  it ("adds a route for " ++ method) $
+                    makeRequest "/" `shouldRespondWith` 200
