@@ -31,10 +31,6 @@ import           Network.HTTP.Types
 import           Network.HTTP.Media
 import           Network.Wai
 
-import           Control.Applicative
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans
-import           Control.Monad.Writer
 import           Data.Trie.Pred.Unified
 import qualified Data.Trie.Pred.Unified            as P
 import qualified Data.Text                         as T
@@ -45,8 +41,13 @@ import           Data.Maybe                        (fromMaybe)
 import           Data.Constraint
 import           Data.Witherable
 import           Data.List
+import           Data.Function.Poly
 
-import Data.Function.Poly
+import           Control.Arrow
+import           Control.Applicative
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans
+import           Control.Monad.Writer
 
 
 newtype HandlerT x m a = HandlerT
@@ -141,12 +142,12 @@ route h req respond = do
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = fromMaybe Html mFileext
 
-  notFoundBasic <- handleNotFound acceptBS Html Get mnftrans
+  notFoundBasic <- handleNotFound req acceptBS Html Get mnftrans
 
   case mMethod of
     Nothing -> liftIO $ respond404 notFoundBasic
     Just v  -> do
-      menf <- handleNotFound acceptBS fe v mnftrans
+      menf <- handleNotFound req acceptBS fe v mnftrans
       let failResp = liftIO $ respond404 menf
 
       case P.lookupWithL trimFileExt (pathInfo req) rtrie of
@@ -154,10 +155,10 @@ route h req respond = do
           [] -> failResp
           _  -> case trimFileExt $ last $ pathInfo req of
                   "index" -> maybe failResp
-                               (\foundM -> continue acceptBS fe v foundM menf) $
+                               (\foundM -> continue req acceptBS fe v foundM menf) $
                                P.lookup (init $ pathInfo req) rtrie
                   _ -> failResp
-        Just foundM -> continue acceptBS fe v foundM menf
+        Just foundM -> continue req acceptBS fe v foundM menf
 
   where
     onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
@@ -165,38 +166,41 @@ route h req respond = do
 
 
     handleNotFound :: MonadIO m =>
-                      Maybe B.ByteString
+                      Request
+                   -> Maybe B.ByteString
                    -> FileExt
                    -> Verb
                    -> Maybe (ActionT m ())
                    -> m (Maybe Response)
-    handleNotFound acceptBS f v mnfcomp =
+    handleNotFound req acceptBS f v mnfcomp =
       let handleEither nfcomp = do
             vmapLit <- execWriterT $ runVerbListenerT nfcomp
             onJustM (\(_, femonad) -> do
               femap <- execWriterT $ runFileExtListenerT femonad
               return $ lookupProper acceptBS f $ unFileExts femap) $
-                M.lookup v $ unVerbs vmapLit
-      in
-      onJustM handleEither mnfcomp
+                M.lookup v $ supplyReq req $ unVerbs vmapLit
+      in onJustM handleEither mnfcomp
 
 
     continue :: MonadIO m =>
-                Maybe B.ByteString
+                Request
+             -> Maybe B.ByteString
              -> FileExt
              -> Verb
              -> ActionT m ()
              -> Maybe Response
              -> m ResponseReceived
-    continue acceptBS f v foundM mnfResp = do
+    continue req acceptBS f v foundM mnfResp = do
       vmapLit <- execWriterT $ runVerbListenerT foundM
-      continueMap acceptBS f v (unVerbs vmapLit) mnfResp
+      continueMap acceptBS f v (supplyReq req $ unVerbs vmapLit) mnfResp
 
     continueMap :: MonadIO m =>
                    Maybe B.ByteString
                 -> FileExt
                 -> Verb
-                -> M.Map Verb (Maybe (BL.ByteString -> m (), Maybe BodyLength), FileExtListenerT Response m ())
+                -> M.Map Verb ( Maybe (BL.ByteString -> m (), Maybe BodyLength)
+                              , FileExtListenerT Response m ()
+                              )
                 -> Maybe Response
                 -> m ResponseReceived
     continueMap acceptBS f v vmap mnfResp = do

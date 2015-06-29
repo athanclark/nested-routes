@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                3.0.0.2
+Version:                3.1.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -20,7 +20,8 @@ Description:
   <https://hackage.haskell.org/package/attoparsec Attoparsec>
   parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions>
   /directly/ in our routes, with our handlers
-  reflecting their results. You can find more information on the <https://www.fpcomplete.com/user/AthanClark/nested-routes demo>.
+  reflecting their results. You can find more information on the
+  <https://www.fpcomplete.com/user/AthanClark/nested-routes demo>.
   .
   As an example:
   .
