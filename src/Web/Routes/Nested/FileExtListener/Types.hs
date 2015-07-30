@@ -19,6 +19,7 @@ import           Data.Monoid
 import           Data.Traversable
 
 
+-- | Supported file extensions
 data FileExt = Html
              | Css
              | JavaScript

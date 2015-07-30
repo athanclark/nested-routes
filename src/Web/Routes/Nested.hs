@@ -125,24 +125,25 @@ notFound ts mvl (Just cs) = do
 notFound _ Nothing Nothing = return ()
 
 
+type Middleware' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
+
 -- | Turns a @HandlerT@ into a Wai @Application@
 route :: ( Functor m
          , Monad m
          , MonadIO m
          ) => HandlerT (ActionT m ()) m a -- ^ Assembled @handle@ calls
-           -> Request
-           -> (Response -> IO ResponseReceived) -> m ResponseReceived
+           -> Middleware' m
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
       mFileext = case pathInfo req of
                          [] -> Just Html
-                         xs -> toExt $ T.pack $ dropWhile (/= '.') $ T.unpack $ last xs
+                         xs -> toExt $ T.dropWhile (/= '.') $ last xs
       mnftrans = P.lookupNearestParent (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = fromMaybe Html mFileext
 
-  notFoundBasic <- handleNotFound req acceptBS Html Get mnftrans
+  notFoundBasic <- handleNotFound req acceptBS Html GET mnftrans
 
   case mMethod of
     Nothing -> liftIO $ respond404 notFoundBasic
@@ -279,8 +280,8 @@ route h req respond = do
         endsWithAny s xs = dropWhile (/= '.') s `elem` xs
 
     httpMethodToMSym :: Method -> Maybe Verb
-    httpMethodToMSym x | x == methodGet    = Just Get
-                       | x == methodPost   = Just Post
-                       | x == methodPut    = Just Put
-                       | x == methodDelete = Just Delete
+    httpMethodToMSym x | x == methodGet    = Just GET
+                       | x == methodPost   = Just POST
+                       | x == methodPut    = Just PUT
+                       | x == methodDelete = Just DELETE
                        | otherwise         = Nothing

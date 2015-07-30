@@ -11,6 +11,7 @@
 module Web.Routes.Nested.VerbListener where
 
 import           Network.Wai (Request)
+import           Network.HTTP.Types (StdMethod (..))
 
 import           Data.Foldable
 import           Data.Traversable
@@ -23,11 +24,7 @@ import           Control.Monad.Trans
 import           Control.Monad.Writer
 
 
-data Verb = Get
-          | Post
-          | Put
-          | Delete
-  deriving (Show, Eq, Ord)
+type Verb = StdMethod
 
 type BodyLength = Word64
 
@@ -68,86 +65,97 @@ foldMWithKey :: Monad m => (acc -> Verb -> a -> m acc) -> acc -> Map Verb a -> m
 foldMWithKey f i = foldlWithKey (\macc k a -> (\mer -> f mer k a) =<< macc) (return i)
 
 
+-- | For simple @GET@ responses
 get :: ( Monad m
        ) => r -> VerbListenerT r m ()
 get r = do
-  let new = singleton Get (Nothing, Left r)
+  let new = singleton GET (Nothing, Left r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Inspect the @Request@ object supplied by WAI
 getReq :: ( Monad m
           ) => (Request -> r) -> VerbListenerT r m ()
 getReq r = do
-  let new = singleton Get (Nothing, Right r)
+  let new = singleton GET (Nothing, Right r)
   VerbListenerT $ tell $ Verbs new
 
 
+-- | For simple @POST@ responses
 post :: ( Monad m
         , MonadIO m
         ) => (BL.ByteString -> m ()) -> r -> VerbListenerT r m ()
 post handle r = do
-  let new = singleton Post (Just (handle, Nothing), Left r)
+  let new = singleton POST (Just (handle, Nothing), Left r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Inspect the @Request@ object supplied by WAI
 postReq :: ( Monad m
            , MonadIO m
            ) => (BL.ByteString -> m ()) -> (Request -> r) -> VerbListenerT r m ()
 postReq handle r = do
-  let new = singleton Post (Just (handle, Nothing), Right r)
+  let new = singleton POST (Just (handle, Nothing), Right r)
   VerbListenerT $ tell $ Verbs new
 
-
+-- | Supply a maximum size bound for file uploads
 postMax :: ( Monad m
            , MonadIO m
            ) => BodyLength -> (BL.ByteString -> m ()) -> r -> VerbListenerT r m ()
 postMax bl handle r = do
-  let new = singleton Post (Just (handle, Just bl), Left r)
+  let new = singleton POST (Just (handle, Just bl), Left r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Inspect the @Request@ object supplied by WAI
 postMaxReq :: ( Monad m
               , MonadIO m
               ) => BodyLength -> (BL.ByteString -> m ()) -> (Request -> r) -> VerbListenerT r m ()
 postMaxReq bl handle r = do
-  let new = singleton Post (Just (handle, Just bl), Right r)
+  let new = singleton POST (Just (handle, Just bl), Right r)
   VerbListenerT $ tell $ Verbs new
 
 
+-- | For simple @PUT@ responses
 put :: ( Monad m
        , MonadIO m
        ) => (BL.ByteString -> m ()) -> r -> VerbListenerT r m ()
 put handle r = do
-  let new = singleton Put (Just (handle, Nothing), Left r)
+  let new = singleton PUT (Just (handle, Nothing), Left r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Inspect the @Request@ object supplied by WAI
 putReq :: ( Monad m
           , MonadIO m
           ) => (BL.ByteString -> m ()) -> (Request -> r) -> VerbListenerT r m ()
 putReq handle r = do
-  let new = singleton Put (Just (handle, Nothing), Right r)
+  let new = singleton PUT (Just (handle, Nothing), Right r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Supply a maximum size bound for file uploads
 putMax :: ( Monad m
           , MonadIO m
           ) => BodyLength -> (BL.ByteString -> m ()) -> r -> VerbListenerT r m ()
 putMax bl handle r = do
-  let new = singleton Put (Just (handle, Just bl), Left r)
+  let new = singleton PUT (Just (handle, Just bl), Left r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Inspect the @Request@ object supplied by WAI
 putMaxReq :: ( Monad m
              , MonadIO m
              ) => BodyLength -> (BL.ByteString -> m ()) -> (Request -> r) -> VerbListenerT r m ()
 putMaxReq bl handle r = do
-  let new = singleton Put (Just (handle, Just bl), Right r)
+  let new = singleton PUT (Just (handle, Just bl), Right r)
   VerbListenerT $ tell $ Verbs new
 
 
+-- | For simple @DELETE@ responses
 delete :: ( Monad m
           ) => r -> VerbListenerT r m ()
 delete r = do
-  let new = singleton Delete (Nothing, Left r)
+  let new = singleton DELETE (Nothing, Left r)
   VerbListenerT $ tell $ Verbs new
 
+-- | Inspect the @Request@ object supplied by WAI
 deleteReq :: ( Monad m
              ) => (Request -> r) -> VerbListenerT r m ()
 deleteReq r = do
-  let new = singleton Delete (Nothing, Right r)
+  let new = singleton DELETE (Nothing, Right r)
   VerbListenerT $ tell $ Verbs new
