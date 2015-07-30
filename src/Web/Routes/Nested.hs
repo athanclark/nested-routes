@@ -125,14 +125,14 @@ notFound ts mvl (Just cs) = do
 notFound _ Nothing Nothing = return ()
 
 
-type Middleware' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
+type Application' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
 
 -- | Turns a @HandlerT@ into a Wai @Application@
 route :: ( Functor m
          , Monad m
          , MonadIO m
          ) => HandlerT (ActionT m ()) m a -- ^ Assembled @handle@ calls
-           -> Middleware' m
+           -> Application' m
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
