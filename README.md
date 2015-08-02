@@ -1,3 +1,4 @@
+![Logo](https://raw.githubusercontent.com/athanclark/nested-routes/master/logo.png)]
 [![Stories in Ready](https://badge.waffle.io/athanclark/nested-routes.png?label=ready&title=Ready)](https://waffle.io/athanclark/nested-routes)
 nested-routes
 =============
@@ -17,8 +18,8 @@ can also embed
 [Attoparsec](https://hackage.haskell.org/package/attoparsec)
 parsers /directly/ in our routes, with our handlers
 reflecting their results. As an example:
- 
-```haskell 
+
+```haskell
 router :: Application
 router = route handlers
   where
