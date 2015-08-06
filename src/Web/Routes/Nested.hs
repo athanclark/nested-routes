@@ -38,7 +38,6 @@ import qualified Data.Map.Lazy                     as M
 import qualified Data.ByteString                   as B
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
-import           Data.Constraint
 import           Data.Witherable
 import           Data.List
 import           Data.Function.Poly
@@ -173,13 +172,13 @@ route h req respond = do
                    -> Verb
                    -> Maybe (ActionT m ())
                    -> m (Maybe Response)
-    handleNotFound req acceptBS f v mnfcomp =
+    handleNotFound req' acceptBS f v mnfcomp =
       let handleEither nfcomp = do
             vmapLit <- execWriterT $ runVerbListenerT nfcomp
             onJustM (\(_, femonad) -> do
               femap <- execWriterT $ runFileExtListenerT femonad
               return $ lookupProper acceptBS f $ unFileExts femap) $
-                M.lookup v $ supplyReq req $ unVerbs vmapLit
+                M.lookup v $ supplyReq req' $ unVerbs vmapLit
       in onJustM handleEither mnfcomp
 
 
@@ -191,9 +190,9 @@ route h req respond = do
              -> ActionT m ()
              -> Maybe Response
              -> m ResponseReceived
-    continue req acceptBS f v foundM mnfResp = do
+    continue req' acceptBS f v foundM mnfResp = do
       vmapLit <- execWriterT $ runVerbListenerT foundM
-      continueMap acceptBS f v (supplyReq req $ unVerbs vmapLit) mnfResp
+      continueMap acceptBS f v (supplyReq req' $ unVerbs vmapLit) mnfResp
 
     continueMap :: MonadIO m =>
                    Maybe B.ByteString
@@ -209,24 +208,24 @@ route h req respond = do
 
       maybe failResp (\(mreqbodyf, femonad) -> do
           femap <- execWriterT $ runFileExtListenerT femonad
-          maybe failResp (\r ->
+          maybe failResp (\r' ->
               case mreqbodyf of
-                Nothing              -> liftIO $ respond r
-                Just (reqbf,Nothing) -> handleUpload req reqbf respond r
+                Nothing              -> liftIO $ respond r'
+                Just (reqbf,Nothing) -> handleUpload req reqbf respond r'
                 Just (reqbf,Just bl) ->
                   case requestBodyLength req of
                     KnownLength bl' ->
                       if bl' <= bl
-                      then handleUpload req reqbf respond r
+                      then handleUpload req reqbf respond r'
                       else failResp
                     _ -> failResp) $
             lookupProper acceptBS f $ unFileExts femap) $
         M.lookup v vmap
 
-    handleUpload req reqbf respond r = do
-      body <- liftIO $ strictRequestBody req
+    handleUpload req' reqbf respond' r' = do
+      body <- liftIO $ strictRequestBody req'
       reqbf body
-      liftIO $ respond r
+      liftIO $ respond' r'
 
     respond404 :: Maybe Response -> IO ResponseReceived
     respond404 mr = respond $ fromMaybe plain404 mr
@@ -240,7 +239,7 @@ route h req respond = do
                        (possibleFileExts k) maccept
       in foldr (go xs) Nothing attempts
       where
-        go xs x Nothing = M.lookup x xs
+        go xs' x Nothing = M.lookup x xs'
         go _ _ (Just y) = Just y
 
     possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
@@ -277,7 +276,7 @@ route h req respond = do
         possibleExts = [ ".html",".htm",".txt",".json",".lucid"
                        , ".julius",".css",".cassius",".lucius"
                        ]
-        endsWithAny s xs = dropWhile (/= '.') s `elem` xs
+        endsWithAny s' xs = dropWhile (/= '.') s' `elem` xs
 
     httpMethodToMSym :: Method -> Maybe Verb
     httpMethodToMSym x | x == methodGet    = Just GET
