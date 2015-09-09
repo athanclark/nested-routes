@@ -197,7 +197,6 @@ route h req respond = do
 
   notFoundBasic <- handleNotFound acceptBS Html GET mnftrans
 
-
   mResp <- runMaybeT $ do
     v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
     menf <- lift $ handleNotFound acceptBS fe v mnftrans
@@ -245,92 +244,112 @@ route h req respond = do
              -> m ResponseReceived
     continue acceptBS f v foundM mnfResp = do
       vmapLit <- execWriterT $ runVerbListenerT foundM
-      continueMap acceptBS f v (supplyReq req $ unVerbs $ unUnion vmapLit) mnfResp
+      continueMap acceptBS f v (supplyReq req $ unVerbs $ unUnion vmapLit) mnfResp req respond
 
-    continueMap :: MonadIO m =>
-                   Maybe B.ByteString
-                -> FileExt
-                -> Verb
-                -> Map.Map Verb ( HandleUpload m
-                                , FileExtListenerT Response m ()
-                                )
-                -> Maybe Response
-                -> m ResponseReceived
-    continueMap acceptBS f v vmap mnfResp = do
-      let failResp = liftIO $ respond404 mnfResp
-
-      mResp <- runMaybeT $ do
-        (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
-        femap <- lift $ execWriterT $ runFileExtListenerT femonad
-        r <- hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
-        case mreqbodyf of
-          Nothing              -> return $ liftIO $ respond r
-          Just (reqbf,Nothing) -> return $ handleUpload req reqbf respond r
-          Just (reqbf,Just bl) -> case requestBodyLength req of
-            KnownLength bl' | bl' <= bl -> return $ handleUpload req reqbf respond r
-            _                           -> mzero
-
-      fromMaybe failResp mResp
-
-    handleUpload req' reqbf respond' r' = do
-      body <- liftIO $ strictRequestBody req'
-      _    <- reqbf body
-      liftIO $ respond' r'
-
+    -- Respond with @plain404@ if no response is given
     respond404 :: Maybe Response -> IO ResponseReceived
     respond404 mr = respond $ fromMaybe plain404 mr
 
-    plain404 :: Response
-    plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
-    lookupProper :: Maybe B.ByteString -> FileExt -> Map.Map FileExt a -> Maybe a
-    lookupProper maccept k xs =
-      let attempts = maybe [Html,Text,Json,JavaScript,Css]
-                       (possibleFileExts k) maccept
-      in foldr (go xs) Nothing attempts
-      where
-        go xs' x Nothing = Map.lookup x xs'
-        go _ _ (Just y) = Just y
+continueMap :: MonadIO m =>
+               Maybe B.ByteString -- ^ @Accept@ header
+            -> FileExt
+            -> Verb
+            -> Map.Map Verb ( HandleUpload m
+                            , FileExtListenerT Response m ()
+                            )
+            -> Maybe Response -- ^ Potential @404@ page
+            -> Application' m
+continueMap acceptBS f v vmap mnfResp req respond = do
+  let respond404 mr = respond $ fromMaybe plain404 mr
+      failResp = liftIO $ respond404 mnfResp
 
-    possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
-    possibleFileExts fe accept =
-      let computed = sortFE fe $ nub $ concat $
-            catMaybes [ mapAccept [ ("application/json" :: B.ByteString, [Json])
-                                  , ("application/javascript" :: B.ByteString, [Json,JavaScript])
-                                  ] accept
-                      , mapAccept [ ("text/html" :: B.ByteString, [Html])
-                                  ] accept
-                      , mapAccept [ ("text/plain" :: B.ByteString, [Text])
-                                  ] accept
-                      , mapAccept [ ("text/css" :: B.ByteString, [Css])
-                                  ] accept
-                      ]
+  mResp <- runMaybeT $ do
+    (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
+    femap <- lift $ execWriterT $ runFileExtListenerT femonad
+    r <- hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
+    case mreqbodyf of
+      Nothing              -> return $ liftIO $ respond r
+      Just (reqbf,Nothing) -> return $ handleUpload r reqbf req respond
+      Just (reqbf,Just bl) -> case requestBodyLength req of
+        KnownLength bl' | bl' <= bl -> return $ handleUpload r reqbf req respond
+        _                           -> mzero
+  fromMaybe failResp mResp
 
-          wildcard = concat $
-            catMaybes [ mapAccept [ ("*/*" :: B.ByteString, [Html,Text,Json,JavaScript,Css])
-                                  ] accept
-                      ]
-      in if not (null wildcard) then wildcard else computed
 
+-- | Terminate the request/response cycle by first handling request body data
+-- before responding.
+handleUpload :: ( Monad m
+                , MonadIO m
+                , Functor m
+                ) => Response -- ^ Response to send
+                  -> (BL.ByteString -> m ()) -- ^ Handle the upload content
+                  -> Application' m
+handleUpload r' reqbf req' respond' = do
+  body <- liftIO $ strictRequestBody req'
+  _    <- reqbf body
+  liftIO $ respond' r'
+
+-- | Default @404@ response
+plain404 :: Response
+plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
+
+-- | Given a possible @Accept@ header and file extension key, lookup the contents
+-- of a map.
+lookupProper :: Maybe B.ByteString -> FileExt -> Map.Map FileExt a -> Maybe a
+lookupProper maccept k xs =
+  let attempts = maybe [Html,Text,Json,JavaScript,Css]
+                   (possibleFileExts k) maccept
+  in foldr (go xs) Nothing attempts
+  where
+    go xs' x Nothing = Map.lookup x xs'
+    go _ _ (Just y) = Just y
+
+
+-- | Takes a subject file extension and an @Accept@ header, and returns the other
+-- types of file types handleable, in order of prescedence.
+possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
+possibleFileExts fe accept =
+  let computed = sortFE fe $ nub $ concat $
+        catMaybes [ mapAccept [ ("application/json" :: B.ByteString, [Json])
+                              , ("application/javascript" :: B.ByteString, [Json,JavaScript])
+                              ] accept
+                  , mapAccept [ ("text/html" :: B.ByteString, [Html])
+                              ] accept
+                  , mapAccept [ ("text/plain" :: B.ByteString, [Text])
+                              ] accept
+                  , mapAccept [ ("text/css" :: B.ByteString, [Css])
+                              ] accept
+                  ]
+
+      wildcard = concat $
+        catMaybes [ mapAccept [ ("*/*" :: B.ByteString, [Html,Text,Json,JavaScript,Css])
+                              ] accept
+                  ]
+  in if not (null wildcard) then wildcard else computed
+  where
     sortFE Html       xs = [Html, Text]             `intersect` xs
     sortFE JavaScript xs = [JavaScript, Text]       `intersect` xs
     sortFE Json       xs = [Json, JavaScript, Text] `intersect` xs
     sortFE Css        xs = [Css, Text]              `intersect` xs
     sortFE Text       xs = [Text]                   `intersect` xs
 
-    trimFileExt :: T.Text -> T.Text
-    trimFileExt s = if T.unpack s `endsWithAny` possibleExts
-                    then T.pack $ takeWhile (/= '.') $ T.unpack s
-                    else s
-      where
-        possibleExts = [ ".html",".htm",".txt",".json",".lucid"
-                       , ".julius",".css",".cassius",".lucius"
-                       ]
-        endsWithAny s' xs = dropWhile (/= '.') s' `elem` xs
+-- | Removes @.txt@ from @foo.txt@
+trimFileExt :: T.Text -> T.Text
+trimFileExt s = if endsWithAny (T.unpack s)
+                then T.pack $ takeWhile (/= '.') $ T.unpack s
+                else s
+  where
+    possibleExts = [ ".html",".htm",".txt",".json",".lucid"
+                   , ".julius",".css",".cassius",".lucius"
+                   ]
+    endsWithAny s' = dropWhile (/= '.') s' `Prelude.elem` possibleExts
 
-    httpMethodToMSym :: Method -> Maybe Verb
-    httpMethodToMSym x | x == methodGet    = Just GET
-                       | x == methodPost   = Just POST
-                       | x == methodPut    = Just PUT
-                       | x == methodDelete = Just DELETE
-                       | otherwise         = Nothing
+
+-- | Turns a @ByteString@ into a @StdMethod@.
+httpMethodToMSym :: Method -> Maybe Verb
+httpMethodToMSym x | x == methodGet    = Just GET
+                   | x == methodPost   = Just POST
+                   | x == methodPut    = Just PUT
+                   | x == methodDelete = Just DELETE
+                   | otherwise         = Nothing
