@@ -164,7 +164,6 @@ auth p authFail cs = do
        )
 
 
-
 notFound :: ( Monad m
             , Functor m
             , cleanxs ~ CatMaybes xs
