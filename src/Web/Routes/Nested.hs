@@ -163,9 +163,9 @@ auth :: ( Monad m
           -> HandlerT content sec m ()
 auth p authFail cs = do
   s <- lift p
-  (_,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
-  tell ( mempty
-       , mempty
+  (rtrie,nftrie,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
+  tell ( rtrie
+       , nftrie
        , Rooted (Just s) trieSec
        , Rooted (Just authFail) trie401
        )
@@ -275,7 +275,7 @@ actionToResponse :: MonadIO m =>
                  -> FileExt
                  -> Verb
                  -> Maybe (ActionT m ()) -- Potential results of 404 lookup
-                 -> Response -- Default @404@
+                 -> Response -- Default Response
                  -> Request
                  -> m Response
 actionToResponse acceptBS f v mnfcomp def req = do

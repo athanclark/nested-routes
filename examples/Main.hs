@@ -14,13 +14,11 @@ import Data.Monoid
 import qualified Data.Text.Lazy as LT
 
 
-fooLoc = l "foo" </> o
-
 main = run 3000 $ route $ do
-  handle fooLoc
+  handle (l "foo" </> o)
     (Just $ get $ text "foo!")    -- current
     $ Just $ do
-      -- auth (return True) (get $ text "Unauthorized") $ do  -- children
+      auth (return True) (get $ text "Unauthorized") $ do  -- children
         handle (l "bar" </> o)
           (Just $ get $ do          -- current
              text "bar!"
