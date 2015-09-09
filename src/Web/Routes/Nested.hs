@@ -13,19 +13,26 @@
   #-}
 
 module Web.Routes.Nested
-  ( module X
+  ( -- * Types
+    module X
+  , Tries
   , HandlerT (..)
   , ActionT
+  , Application'
+  -- * Combinators
   , handle
   , parent
   , auth
   , notFound
+  -- * Entry Point
   , route
+  -- * Utilities
   , handleNotFound
   , lookupResponse
   , handleUpload
   , plain404
   , lookupProper
+  -- ** File Extensions
   , possibleFileExts
   , trimFileExt
   , getFileExt
