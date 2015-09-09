@@ -233,6 +233,8 @@ extractAuthSym hs req = do
   (_,_,strie,_) <- execHandlerT hs
   return $ P.lookupThrough (pathInfo req) strie
 
+-- (\r -> or <$> runReaderT (extractAuthSym routes r) ) :: Request -> m [Bool]
+
 
 extractAuthResp :: ( Monad m
                    , MonadIO m

@@ -21,7 +21,8 @@ emailLoc = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+
 main = run 3000 $ route $ do
   handle fooLoc
     (Just $ get $ text "foo!")    -- current
-    (Just $ do                    -- children
+    (Just $
+      auth (return True) (get $ json "Foo") $ do  -- children
       handle (l "bar" </> o)
         (Just $ get $ do          -- current
            text "bar!"
