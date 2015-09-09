@@ -37,7 +37,7 @@ type family CatMaybes (xs :: [Maybe *]) :: [*] where
   CatMaybes ('Nothing  ': xs) = CatMaybes xs
   CatMaybes (('Just x) ': xs) = x ': CatMaybes xs
 
--- | Create a singleton node for the trie
+-- | Creates a string of nodes - a trie with a width of 1.
 class Singleton chunks a trie | chunks a -> trie where
   singleton :: chunks -> a -> trie
 

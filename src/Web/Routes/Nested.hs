@@ -53,16 +53,22 @@ import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
 
 
-newtype HandlerT x m a = HandlerT
+newtype HandlerT x s m a = HandlerT
   { runHandler :: WriterT ( RUPTrie T.Text x -- Normal Responses
                           , RUPTrie T.Text x -- 404 Responses
+                          , RUPTrie T.Text s -- Security -- TODO: LookupMonoid - <> the resultContents up the line
+                          , RUPTrie T.Text x -- 401 Responses
                           ) m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadIO
            , MonadTrans
-           , MonadWriter (RUPTrie T.Text x, RUPTrie T.Text x)
+           , MonadWriter ( RUPTrie T.Text x
+                         , RUPTrie T.Text x
+                         , RUPTrie T.Text s
+                         , RUPTrie T.Text x
+                         )
            )
 
 type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
@@ -71,66 +77,104 @@ type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 handle :: ( Monad m
           , Functor m
           , cleanxs ~ CatMaybes xs
-          , HasResult childType (ActionT m ())
-          , ExpectArity cleanxs childType
+          , HasResult childContent (ActionT m ())
+          , ExpectArity cleanxs childContent
           , Singleton (UrlChunks xs)
-              childType
-              (RUPTrie T.Text result)
+              childContent
+              (RUPTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childType)
-              (RUPTrie T.Text result)
-          , (ArityMinusTypeList childType cleanxs) ~ result
-          , childType ~ TypeListToArity cleanxs result
+              (RUPTrie T.Text childContent)
+              (RUPTrie T.Text resultContent)
+          , Extrude (UrlChunks xs)
+              (RUPTrie T.Text childSec)
+              (RUPTrie T.Text resultSec)
+          , (ArityMinusTypeList childContent cleanxs) ~ resultContent
+          , childContent ~ TypeListToArity cleanxs resultContent
           ) => UrlChunks xs -- ^ Path to match against
-            -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
-            -> Maybe (HandlerT childType m ()) -- ^ Potential child routes
-            -> HandlerT result m ()
-handle ts (Just vl) Nothing = tell (singleton ts vl, mempty)
+            -> Maybe childContent -- ^ Possibly a function, ending in @ActionT z m ()@.
+            -> Maybe (HandlerT childContent childSec m ()) -- ^ Potential child routes
+            -> HandlerT resultContent resultSec m ()
+handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
-  (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
-  tell (extrude ts $ Rooted mvl ctrie, mempty)
+  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execWriterT $ runHandler cs
+  tell ( extrude ts $ Rooted mvl trieContent
+       , mempty
+       , extrude ts $ Rooted Nothing trieSec
+       , extrude ts $ Rooted Nothing trie401
+       )
 handle _ Nothing Nothing = return ()
 
 parent :: ( Monad m
           , Functor m
           , cleanxs ~ CatMaybes xs
           , Singleton (UrlChunks xs)
-              childType
-              (RUPTrie T.Text result)
+              childContent
+              (RUPTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childType)
-              (RUPTrie T.Text result)
-          , (ArityMinusTypeList childType cleanxs) ~ result
-          , childType ~ TypeListToArity cleanxs result
+              (RUPTrie T.Text childContent)
+              (RUPTrie T.Text resultContent)
+          , Extrude (UrlChunks xs)
+              (RUPTrie T.Text childSec)
+              (RUPTrie T.Text resultSec)
+          , (ArityMinusTypeList childContent cleanxs) ~ resultContent
+          , childContent ~ TypeListToArity cleanxs resultContent
           ) => UrlChunks xs
-            -> HandlerT childType m ()
-            -> HandlerT result m ()
+            -> HandlerT childContent childSec m ()
+            -> HandlerT resultContent resultSec m ()
 parent ts cs = do
-  (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
-  tell (extrude ts $ Rooted Nothing ctrie, mempty)
+  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execWriterT $ runHandler cs
+  tell ( extrude ts $ Rooted Nothing trieContent
+       , mempty
+       , extrude ts $ Rooted Nothing trieSec
+       , extrude ts $ Rooted Nothing trie401
+       )
+
+
+auth :: ( Monad m
+        , Functor m
+        ) => m sec
+          -> content
+          -> HandlerT content sec m ()
+          -> HandlerT content sec m ()
+auth p authFail cs = do
+  s <- lift p
+  (_,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execWriterT $ runHandler cs
+  tell ( mempty
+       , mempty
+       , Rooted (Just s) trieSec
+       , Rooted (Just authFail) trie401
+       )
+
+
 
 notFound :: ( Monad m
             , Functor m
             , cleanxs ~ CatMaybes xs
-            , HasResult childType (ActionT m ())
-            , ExpectArity cleanxs childType
+            , HasResult childContent (ActionT m ())
+            , ExpectArity cleanxs childContent
             , Singleton (UrlChunks xs)
-                childType
-                (RUPTrie T.Text result)
+                childContent
+                (RUPTrie T.Text resultContent)
             , Extrude (UrlChunks xs)
-                (RUPTrie T.Text childType)
-                (RUPTrie T.Text result)
-            , (ArityMinusTypeList childType cleanxs) ~ result
-            , childType ~ TypeListToArity cleanxs result
+                (RUPTrie T.Text childContent)
+                (RUPTrie T.Text resultContent)
+            , (ArityMinusTypeList childContent cleanxs) ~ resultContent
+            , childContent ~ TypeListToArity cleanxs resultContent
             ) => UrlChunks xs
-              -> Maybe childType
-              -> Maybe (HandlerT childType m ())
-              -> HandlerT result m ()
-notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl)
+              -> Maybe childContent
+              -> Maybe (HandlerT childContent s m ())
+              -> HandlerT resultContent s m ()
+notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
-  (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
-  tell (mempty, extrude ts $ Rooted mvl ctrie)
+  (Rooted _ ctrie,_,_,_) <- lift $ execWriterT $ runHandler cs
+  tell ( mempty
+       , extrude ts $ Rooted mvl ctrie
+       , mempty
+       , mempty
+       )
 notFound _ Nothing Nothing = return ()
+
+
 
 
 type Application' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
@@ -139,10 +183,10 @@ type Application' m = Request -> (Response -> IO ResponseReceived) -> m Response
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) => HandlerT (ActionT m ()) m a -- ^ Assembled @handle@ calls
+         ) => HandlerT (ActionT m ()) s m a -- ^ Assembled @handle@ calls
            -> Application' m
 route h req respond = do
-  (rtrie, nftrie) <- execWriterT $ runHandler h
+  (rtrie, nftrie,_,_) <- execWriterT $ runHandler h
   let mnftrans = P.lookupNearestParent (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       -- file extension
