@@ -135,6 +135,7 @@ Library
                       , witherable
                       , composition
                       , semigroups
+                      , bifunctors
                       , constraints
                       , containers
                       , text
@@ -148,6 +149,8 @@ Library
                       , regex-compat
                       , pred-trie >= 0.2
                       , poly-arity >= 0.0.4
+                      , sets >= 0.0.5
+                      , errors
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0
@@ -166,6 +169,7 @@ Test-Suite spec
                       , containers
                       , composition
                       , semigroups
+                      , bifunctors
                       , text
                       , aeson
                       , wai-util
@@ -181,6 +185,8 @@ Test-Suite spec
                       , transformers
                       , http-media
                       , http-types
+                      , sets
+                      , errors
 
 Source-Repository head
   Type:                 git

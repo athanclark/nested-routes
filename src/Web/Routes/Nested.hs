@@ -34,25 +34,36 @@ import           Network.Wai
 import           Data.Trie.Pred.Unified
 import qualified Data.Trie.Pred.Unified            as P
 import qualified Data.Text                         as T
-import qualified Data.Map.Lazy                     as M
+import qualified Data.Map                          as Map
 import qualified Data.ByteString                   as B
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
 import           Data.Witherable
+import           Data.Bifunctor
 import           Data.List
 import           Data.Function.Poly
+import           Data.Set.Class                    as Sets hiding (singleton)
 
 import           Control.Arrow
+import           Control.Error.Util
 import           Control.Applicative
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
+import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
 
 
 newtype HandlerT x m a = HandlerT
-  { runHandler :: WriterT ( RUPTrie T.Text x
-                          , RUPTrie T.Text x ) m a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadTrans)
+  { runHandler :: WriterT ( RUPTrie T.Text x -- Normal Responses
+                          , RUPTrie T.Text x -- 404 Responses
+                          ) m a }
+  deriving ( Functor
+           , Applicative
+           , Monad
+           , MonadIO
+           , MonadTrans
+           , MonadWriter (RUPTrie T.Text x, RUPTrie T.Text x)
+           )
 
 type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 
@@ -74,11 +85,10 @@ handle :: ( Monad m
             -> Maybe childType -- ^ Possibly a function, ending in @ActionT z m ()@.
             -> Maybe (HandlerT childType m ()) -- ^ Potential child routes
             -> HandlerT result m ()
-handle ts (Just vl) Nothing =
-  HandlerT $ tell (singleton ts vl, mempty)
+handle ts (Just vl) Nothing = tell (singleton ts vl, mempty)
 handle ts mvl (Just cs) = do
   (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
-  HandlerT $ tell (extrude ts $ Rooted mvl ctrie, mempty)
+  tell (extrude ts $ Rooted mvl ctrie, mempty)
 handle _ Nothing Nothing = return ()
 
 parent :: ( Monad m
@@ -97,7 +107,7 @@ parent :: ( Monad m
             -> HandlerT result m ()
 parent ts cs = do
   (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
-  HandlerT $ tell (extrude ts $ Rooted Nothing ctrie, mempty)
+  tell (extrude ts $ Rooted Nothing ctrie, mempty)
 
 notFound :: ( Monad m
             , Functor m
@@ -116,11 +126,10 @@ notFound :: ( Monad m
               -> Maybe childType
               -> Maybe (HandlerT childType m ())
               -> HandlerT result m ()
-notFound ts (Just vl) Nothing =
-  HandlerT $ tell (mempty, singleton ts vl)
+notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl)
 notFound ts mvl (Just cs) = do
   (Rooted _ ctrie,_) <- lift $ execWriterT $ runHandler cs
-  HandlerT $ tell (mempty, extrude ts $ Rooted mvl ctrie)
+  tell (mempty, extrude ts $ Rooted mvl ctrie)
 notFound _ Nothing Nothing = return ()
 
 
@@ -134,31 +143,31 @@ route :: ( Functor m
            -> Application' m
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
-  let mMethod  = httpMethodToMSym $ requestMethod req
-      mnftrans = P.lookupNearestParent (pathInfo req) nftrie
+  let mnftrans = P.lookupNearestParent (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       -- file extension
       fe = fromMaybe Html $ case pathInfo req of
               [] -> Just Html -- TODO: Override default file extension for `/foo/bar`
               xs -> toExt $ T.dropWhile (/= '.') $ last xs
 
-  notFoundBasic <- handleNotFound req acceptBS Html GET mnftrans
+  notFoundBasic <- handleNotFound acceptBS Html GET mnftrans
 
-  case mMethod of
-    Nothing -> liftIO $ respond404 notFoundBasic
+  case httpMethodToMSym $ requestMethod req of
+    Nothing -> liftIO $ respond404 notFoundBasic -- crude default 404
     Just v  -> do
-      menf <- handleNotFound req acceptBS fe v mnftrans
-      let failResp = liftIO $ respond404 menf
+      menf <- handleNotFound acceptBS fe v mnftrans
+      let failResp = liftIO $ respond404 menf -- nearest-parent user-defined 404
 
+            -- only runs `trimFileExt` when last lookup cell is a Literal
       case P.lookupWithL trimFileExt (pathInfo req) rtrie of
         Nothing -> case pathInfo req of
           [] -> failResp
           _  -> case trimFileExt $ last $ pathInfo req of
                   "index" -> maybe failResp
-                               (\foundM -> continue req acceptBS fe v foundM menf) $
-                               P.lookup (init $ pathInfo req) rtrie
+                               (\foundM -> continue acceptBS fe v foundM menf)
+                             $ P.lookup (init $ pathInfo req) rtrie
                   _ -> failResp
-        Just foundM -> continue req acceptBS fe v foundM menf
+        Just foundM -> continue acceptBS fe v foundM menf
 
   where
     onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
@@ -166,65 +175,60 @@ route h req respond = do
 
 
     handleNotFound :: MonadIO m =>
-                      Request
-                   -> Maybe B.ByteString
+                      Maybe B.ByteString
                    -> FileExt
                    -> Verb
                    -> Maybe (ActionT m ())
                    -> m (Maybe Response)
-    handleNotFound req' acceptBS f v mnfcomp =
+    handleNotFound acceptBS f v mnfcomp =
       let handleEither nfcomp = do
             vmapLit <- execWriterT $ runVerbListenerT nfcomp
             onJustM (\(_, femonad) -> do
               femap <- execWriterT $ runFileExtListenerT femonad
               return $ lookupProper acceptBS f $ unFileExts femap) $
-                M.lookup v $ supplyReq req' $ unVerbs vmapLit
+                Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
       in onJustM handleEither mnfcomp
 
 
     continue :: MonadIO m =>
-                Request
-             -> Maybe B.ByteString
+                Maybe B.ByteString
              -> FileExt
              -> Verb
              -> ActionT m ()
              -> Maybe Response
              -> m ResponseReceived
-    continue req' acceptBS f v foundM mnfResp = do
+    continue acceptBS f v foundM mnfResp = do
       vmapLit <- execWriterT $ runVerbListenerT foundM
-      continueMap acceptBS f v (supplyReq req' $ unVerbs vmapLit) mnfResp
+      continueMap acceptBS f v (supplyReq req $ unVerbs $ unUnion vmapLit) mnfResp
 
     continueMap :: MonadIO m =>
                    Maybe B.ByteString
                 -> FileExt
                 -> Verb
-                -> M.Map Verb ( Maybe (BL.ByteString -> m (), Maybe BodyLength)
-                              , FileExtListenerT Response m ()
-                              )
+                -> Map.Map Verb ( HandleUpload m
+                                , FileExtListenerT Response m ()
+                                )
                 -> Maybe Response
                 -> m ResponseReceived
     continueMap acceptBS f v vmap mnfResp = do
       let failResp = liftIO $ respond404 mnfResp
 
-      maybe failResp (\(mreqbodyf, femonad) -> do
-          femap <- execWriterT $ runFileExtListenerT femonad
-          maybe failResp (\r' ->
-              case mreqbodyf of
-                Nothing              -> liftIO $ respond r'
-                Just (reqbf,Nothing) -> handleUpload req reqbf respond r'
-                Just (reqbf,Just bl) ->
-                  case requestBodyLength req of
-                    KnownLength bl' ->
-                      if bl' <= bl
-                      then handleUpload req reqbf respond r'
-                      else failResp
-                    _ -> failResp) $
-            lookupProper acceptBS f $ unFileExts femap) $
-        M.lookup v vmap
+      mResp <- runMaybeT $ do
+        (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
+        femap <- lift $ execWriterT $ runFileExtListenerT femonad
+        r <- hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
+        case mreqbodyf of
+          Nothing              -> return $ liftIO $ respond r
+          Just (reqbf,Nothing) -> return $ handleUpload req reqbf respond r
+          Just (reqbf,Just bl) -> case requestBodyLength req of
+            KnownLength bl' | bl' <= bl -> return $ handleUpload req reqbf respond r
+            _                           -> mzero
+
+      fromMaybe failResp mResp
 
     handleUpload req' reqbf respond' r' = do
       body <- liftIO $ strictRequestBody req'
-      reqbf body
+      _    <- reqbf body
       liftIO $ respond' r'
 
     respond404 :: Maybe Response -> IO ResponseReceived
@@ -233,13 +237,13 @@ route h req respond = do
     plain404 :: Response
     plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 
-    lookupProper :: Maybe B.ByteString -> FileExt -> M.Map FileExt a -> Maybe a
+    lookupProper :: Maybe B.ByteString -> FileExt -> Map.Map FileExt a -> Maybe a
     lookupProper maccept k xs =
       let attempts = maybe [Html,Text,Json,JavaScript,Css]
                        (possibleFileExts k) maccept
       in foldr (go xs) Nothing attempts
       where
-        go xs' x Nothing = M.lookup x xs'
+        go xs' x Nothing = Map.lookup x xs'
         go _ _ (Just y) = Just y
 
     possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
