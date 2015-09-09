@@ -231,17 +231,12 @@ route getAuth putAuth chksum h req respond = do
 
   fromMaybe (liftIO $ respond notFoundBasic) mResp
 
-  where
-    -- Respond with @plain404@ if no response is given
-    respond404 :: Maybe Response -> IO ResponseReceived
-    respond404 mr = respond $ fromMaybe plain404 mr
-
 
 handleNotFound :: MonadIO m =>
                   Maybe B.ByteString
                -> FileExt
                -> Verb
-               -> Maybe (ActionT m ())
+               -> Maybe (ActionT m ()) -- Potential results of 404 lookup
                -> Response -- Default @404@
                -> Request
                -> m Response
