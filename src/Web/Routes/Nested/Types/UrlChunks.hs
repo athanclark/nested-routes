@@ -20,7 +20,7 @@ data EitherUrlChunk (x :: Maybe *) where
   (:~) :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
   (:*) :: (T.Text, Regex)    -> EitherUrlChunk ('Just [String])
 
--- | Match against a /literal/ chunk
+-- | Match against a /Literal/ chunk
 l :: T.Text -> EitherUrlChunk 'Nothing
 l = (:=)
 
@@ -28,11 +28,11 @@ l = (:=)
 instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
   fromString = l . T.pack
 
--- | Match against a /parsed/ chunk
+-- | Match against a /Parsed/ chunk
 p :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
 p = (:~)
 
--- | Match against a /regular expression/ chunk
+-- | Match against a /Regular expression/ chunk
 r :: (T.Text, Regex) -> EitherUrlChunk ('Just [String])
 r = (:*)
 
@@ -47,6 +47,6 @@ data UrlChunks (xs :: [Maybe *]) where
 
 infixr 9 </>
 
--- | The /origin/ chunk - the equivalent to @./@ in BASH
+-- | The /new-Origin/ chunk - the equivalent to @[]@
 o :: UrlChunks '[]
 o = Root

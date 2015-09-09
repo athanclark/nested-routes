@@ -59,7 +59,7 @@ type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 -- | For routes ending with a literal.
 handle :: ( Monad m
           , Functor m
-          , cleanxs ~ OnlyJusts xs
+          , cleanxs ~ CatMaybes xs
           , HasResult childType (ActionT m ())
           , ExpectArity cleanxs childType
           , Singleton (UrlChunks xs)
@@ -83,7 +83,7 @@ handle _ Nothing Nothing = return ()
 
 parent :: ( Monad m
           , Functor m
-          , cleanxs ~ OnlyJusts xs
+          , cleanxs ~ CatMaybes xs
           , Singleton (UrlChunks xs)
               childType
               (RUPTrie T.Text result)
@@ -101,7 +101,7 @@ parent ts cs = do
 
 notFound :: ( Monad m
             , Functor m
-            , cleanxs ~ OnlyJusts xs
+            , cleanxs ~ CatMaybes xs
             , HasResult childType (ActionT m ())
             , ExpectArity cleanxs childType
             , Singleton (UrlChunks xs)
@@ -135,12 +135,12 @@ route :: ( Functor m
 route h req respond = do
   (rtrie, nftrie) <- execWriterT $ runHandler h
   let mMethod  = httpMethodToMSym $ requestMethod req
-      mFileext = case pathInfo req of
-                         [] -> Just Html
-                         xs -> toExt $ T.dropWhile (/= '.') $ last xs
       mnftrans = P.lookupNearestParent (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      fe = fromMaybe Html mFileext
+      -- file extension
+      fe = fromMaybe Html $ case pathInfo req of
+              [] -> Just Html -- TODO: Override default file extension for `/foo/bar`
+              xs -> toExt $ T.dropWhile (/= '.') $ last xs
 
   notFoundBasic <- handleNotFound req acceptBS Html GET mnftrans
 
