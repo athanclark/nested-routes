@@ -53,23 +53,24 @@ import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
 
 
+type Tries x s = ( RUPTrie T.Text x
+                 , RUPTrie T.Text x
+                 , RUPTrie T.Text s
+                 , RUPTrie T.Text x
+                 )
+
 newtype HandlerT x s m a = HandlerT
-  { runHandler :: WriterT ( RUPTrie T.Text x -- Normal Responses
-                          , RUPTrie T.Text x -- 404 Responses
-                          , RUPTrie T.Text s -- Security -- TODO: LookupMonoid - <> the resultContents up the line
-                          , RUPTrie T.Text x -- 401 Responses
-                          ) m a }
+  { runHandlerT :: WriterT (Tries x s) m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadIO
            , MonadTrans
-           , MonadWriter ( RUPTrie T.Text x
-                         , RUPTrie T.Text x
-                         , RUPTrie T.Text s
-                         , RUPTrie T.Text x
-                         )
+           , MonadWriter (Tries x s)
            )
+
+execHandlerT :: Monad m => HandlerT x s m a -> m (Tries x s)
+execHandlerT = execWriterT . runHandlerT
 
 type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 
@@ -96,7 +97,7 @@ handle :: ( Monad m
             -> HandlerT resultContent resultSec m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
-  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execWriterT $ runHandler cs
+  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
   tell ( extrude ts $ Rooted mvl trieContent
        , mempty
        , extrude ts $ Rooted Nothing trieSec
@@ -122,7 +123,7 @@ parent :: ( Monad m
             -> HandlerT childContent childSec m ()
             -> HandlerT resultContent resultSec m ()
 parent ts cs = do
-  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execWriterT $ runHandler cs
+  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
   tell ( extrude ts $ Rooted Nothing trieContent
        , mempty
        , extrude ts $ Rooted Nothing trieSec
@@ -138,7 +139,7 @@ auth :: ( Monad m
           -> HandlerT content sec m ()
 auth p authFail cs = do
   s <- lift p
-  (_,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execWriterT $ runHandler cs
+  (_,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
   tell ( mempty
        , mempty
        , Rooted (Just s) trieSec
@@ -166,7 +167,7 @@ notFound :: ( Monad m
               -> HandlerT resultContent s m ()
 notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
-  (Rooted _ ctrie,_,_,_) <- lift $ execWriterT $ runHandler cs
+  (Rooted _ ctrie,_,_,_) <- lift $ execHandlerT cs
   tell ( mempty
        , extrude ts $ Rooted mvl ctrie
        , mempty
@@ -186,7 +187,7 @@ route :: ( Functor m
          ) => HandlerT (ActionT m ()) s m a -- ^ Assembled @handle@ calls
            -> Application' m
 route h req respond = do
-  (rtrie, nftrie,_,_) <- execWriterT $ runHandler h
+  (rtrie, nftrie,_,_) <- execHandlerT h
   let mnftrans = P.lookupNearestParent (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       -- file extension
@@ -196,22 +197,23 @@ route h req respond = do
 
   notFoundBasic <- handleNotFound acceptBS Html GET mnftrans
 
-  case httpMethodToMSym $ requestMethod req of
-    Nothing -> liftIO $ respond404 notFoundBasic -- crude default 404
-    Just v  -> do
-      menf <- handleNotFound acceptBS fe v mnftrans
-      let failResp = liftIO $ respond404 menf -- nearest-parent user-defined 404
+
+  mResp <- runMaybeT $ do
+    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
+    menf <- lift $ handleNotFound acceptBS fe v mnftrans
+    let failResp = liftIO $ respond404 menf -- nearest-parent user-defined 404
 
             -- only runs `trimFileExt` when last lookup cell is a Literal
-      case P.lookupWithL trimFileExt (pathInfo req) rtrie of
-        Nothing -> case pathInfo req of
-          [] -> failResp
-          _  -> case trimFileExt $ last $ pathInfo req of
-                  "index" -> maybe failResp
-                               (\foundM -> continue acceptBS fe v foundM menf)
-                             $ P.lookup (init $ pathInfo req) rtrie
-                  _ -> failResp
-        Just foundM -> continue acceptBS fe v foundM menf
+    return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
+      Nothing -> fromMaybe failResp $ do
+        guard $ not $ null $ pathInfo req
+        guard $ trimFileExt (last $ pathInfo req) == "index"
+        foundM <- P.lookup (init $ pathInfo req) rtrie
+        return $ continue acceptBS fe v foundM menf
+
+      Just foundM -> continue acceptBS fe v foundM menf
+
+  fromMaybe (liftIO $ respond404 notFoundBasic) mResp
 
   where
     onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
