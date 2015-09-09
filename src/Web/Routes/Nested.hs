@@ -200,31 +200,36 @@ type Application' m = Request -> (Response -> IO ResponseReceived) -> m Response
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) => HandlerT (ActionT m ()) s m a -- ^ Assembled @handle@ calls
+         , Eq checksum
+         ) => (Request -> checksum)
+           -> (checksum -> Response)
+           -> ([sec] -> m checksum)
+           -> HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
            -> Application' m
-route h req respond = do
-  (rtrie, nftrie,_,_) <- execHandlerT h
-  let mnftrans = P.lookupNearestParent (pathInfo req) nftrie
+route getAuth putAuth chksum h req respond = do
+  (rtrie, nftrie, strie, srtrie) <- execHandlerT h
+  let mNotFound = P.lookupNearestParent (pathInfo req) nftrie
+      ss = P.lookupThrough (pathInfo req) strie
+      mAuthFail = P.lookupNearestParent (pathInfo req) srtrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
 
-  notFoundBasic <- handleNotFound acceptBS Html GET mnftrans req
+  notFoundBasic <- handleNotFound acceptBS Html GET mNotFound plain404 req
 
   mResp <- runMaybeT $ do
     v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    menf <- lift $ handleNotFound acceptBS fe v mnftrans req
-    let failResp = liftIO $ respond404 menf -- nearest-parent user-defined 404
+    failResp <- lift $ handleNotFound acceptBS fe v mNotFound plain404 req
 
     -- only runs `trimFileExt` when last lookup cell is a Literal
     return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
-      Nothing -> fromMaybe failResp $ do
+      Nothing -> fromMaybe (liftIO $ respond failResp) $ do
         guard $ not $ null $ pathInfo req
         guard $ trimFileExt (last $ pathInfo req) == "index"
         foundM <- P.lookup (init $ pathInfo req) rtrie
-        return $ lookupResponse acceptBS fe v foundM menf req respond
-      Just foundM -> lookupResponse acceptBS fe v foundM menf req respond
+        return $ lookupResponse acceptBS fe v foundM failResp req respond
+      Just foundM -> lookupResponse acceptBS fe v foundM failResp req respond
 
-  fromMaybe (liftIO $ respond404 notFoundBasic) mResp
+  fromMaybe (liftIO $ respond notFoundBasic) mResp
 
   where
     -- Respond with @plain404@ if no response is given
@@ -237,17 +242,17 @@ handleNotFound :: MonadIO m =>
                -> FileExt
                -> Verb
                -> Maybe (ActionT m ())
+               -> Response -- Default @404@
                -> Request
-               -> m (Maybe Response)
-handleNotFound acceptBS f v mnfcomp req =
-  let handleEither nfcomp = do
-        vmapLit <- execWriterT $ runVerbListenerT nfcomp
-        onJustM (\(_, femonad) -> do
-          femap <- execWriterT $ runFileExtListenerT femonad
-          return $ lookupProper acceptBS f $ unFileExts femap)
-          $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
-  in onJustM handleEither mnfcomp
-
+               -> m Response
+handleNotFound acceptBS f v mnfcomp default404 req = do
+  mx <- runMaybeT $ do
+    nfcomp <- hoistMaybe mnfcomp
+    vmapLit <- lift $ execWriterT $ runVerbListenerT nfcomp
+    (_,femonad) <- hoistMaybe $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
+    femap <- lift $ execWriterT $ runFileExtListenerT femonad
+    hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
+  return $ fromMaybe default404 mx
 
 -- | Turn an @ActionT@ into an @Application@ by providing a @FileExt@ and @Verb@
 -- to lookup.
@@ -256,9 +261,9 @@ lookupResponse :: MonadIO m =>
                -> FileExt
                -> Verb
                -> ActionT m ()
-               -> Maybe Response -- @404@ response
+               -> Response -- @404@ response
                -> Application' m
-lookupResponse acceptBS f v foundM mnfResp req respond = do
+lookupResponse acceptBS f v foundM failResp req respond = do
   vmapLit <- execWriterT $ runVerbListenerT foundM
   continue $ supplyReq req $ unVerbs $ unUnion vmapLit
   where
@@ -268,9 +273,6 @@ lookupResponse acceptBS f v foundM mnfResp req respond = do
                              )
              -> m ResponseReceived
     continue vmap = do
-      let respond404 mr = respond $ fromMaybe plain404 mr
-          failResp = liftIO $ respond404 mnfResp
-
       mResp <- runMaybeT $ do
         (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
         femap <- lift $ execWriterT $ runFileExtListenerT femonad
@@ -281,7 +283,7 @@ lookupResponse acceptBS f v foundM mnfResp req respond = do
           Just (reqbf,Just bl) -> case requestBodyLength req of
             KnownLength bl' | bl' <= bl -> return $ handleUpload r reqbf req respond
             _                           -> mzero
-      fromMaybe failResp mResp
+      fromMaybe (liftIO $ respond failResp) mResp
 
 
 -- | Terminate the request/response cycle by first handling request body data
