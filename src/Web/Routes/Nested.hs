@@ -190,53 +190,47 @@ route h req respond = do
   (rtrie, nftrie,_,_) <- execHandlerT h
   let mnftrans = P.lookupNearestParent (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      -- file extension
-      fe = fromMaybe Html $ case pathInfo req of
-              [] -> Just Html -- TODO: Override default file extension for `/foo/bar`
-              xs -> toExt $ T.dropWhile (/= '.') $ last xs
+      fe = getFileExt req
 
-  notFoundBasic <- handleNotFound acceptBS Html GET mnftrans
+  notFoundBasic <- handleNotFound acceptBS Html GET mnftrans req
 
   mResp <- runMaybeT $ do
     v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    menf <- lift $ handleNotFound acceptBS fe v mnftrans
+    menf <- lift $ handleNotFound acceptBS fe v mnftrans req
     let failResp = liftIO $ respond404 menf -- nearest-parent user-defined 404
 
-            -- only runs `trimFileExt` when last lookup cell is a Literal
+    -- only runs `trimFileExt` when last lookup cell is a Literal
     return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
       Nothing -> fromMaybe failResp $ do
         guard $ not $ null $ pathInfo req
         guard $ trimFileExt (last $ pathInfo req) == "index"
         foundM <- P.lookup (init $ pathInfo req) rtrie
         return $ lookupResponse acceptBS fe v foundM menf req respond
-
       Just foundM -> lookupResponse acceptBS fe v foundM menf req respond
 
   fromMaybe (liftIO $ respond404 notFoundBasic) mResp
 
   where
-    onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
-    onJustM = maybe (return Nothing)
-
-
-    handleNotFound :: MonadIO m =>
-                      Maybe B.ByteString
-                   -> FileExt
-                   -> Verb
-                   -> Maybe (ActionT m ())
-                   -> m (Maybe Response)
-    handleNotFound acceptBS f v mnfcomp =
-      let handleEither nfcomp = do
-            vmapLit <- execWriterT $ runVerbListenerT nfcomp
-            onJustM (\(_, femonad) -> do
-              femap <- execWriterT $ runFileExtListenerT femonad
-              return $ lookupProper acceptBS f $ unFileExts femap) $
-                Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
-      in onJustM handleEither mnfcomp
-
     -- Respond with @plain404@ if no response is given
     respond404 :: Maybe Response -> IO ResponseReceived
     respond404 mr = respond $ fromMaybe plain404 mr
+
+
+handleNotFound :: MonadIO m =>
+                  Maybe B.ByteString
+               -> FileExt
+               -> Verb
+               -> Maybe (ActionT m ()) -- Possible
+               -> Request
+               -> m (Maybe Response)
+handleNotFound acceptBS f v mnfcomp req =
+  let handleEither nfcomp = do
+        vmapLit <- execWriterT $ runVerbListenerT nfcomp
+        onJustM (\(_, femonad) -> do
+          femap <- execWriterT $ runFileExtListenerT femonad
+          return $ lookupProper acceptBS f $ unFileExts femap)
+          $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
+  in onJustM handleEither mnfcomp
 
 
 -- | Turn an @ActionT@ into an @Application@ by providing a @FileExt@ and @Verb@
@@ -343,6 +337,12 @@ trimFileExt s = if endsWithAny (T.unpack s)
     endsWithAny s' = dropWhile (/= '.') s' `Prelude.elem` possibleExts
 
 
+getFileExt :: Request -> FileExt
+getFileExt req = fromMaybe Html $ case pathInfo req of
+  [] -> Just Html -- TODO: Override default file extension for `/foo/bar`
+  xs -> toExt $ T.dropWhile (/= '.') $ last xs
+
+
 -- | Turns a @ByteString@ into a @StdMethod@.
 httpMethodToMSym :: Method -> Maybe Verb
 httpMethodToMSym x | x == methodGet    = Just GET
@@ -350,3 +350,9 @@ httpMethodToMSym x | x == methodGet    = Just GET
                    | x == methodPut    = Just PUT
                    | x == methodDelete = Just DELETE
                    | otherwise         = Nothing
+
+
+-- * Utilities
+
+onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
+onJustM = maybe (return Nothing)
