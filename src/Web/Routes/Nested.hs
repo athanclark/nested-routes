@@ -99,6 +99,7 @@ handle :: ( Monad m
           , cleanxs ~ CatMaybes xs
           , HasResult childContent (ActionT m ())
           , ExpectArity cleanxs childContent
+          , ExpectArity cleanxs childSec
           , Singleton (UrlChunks xs)
               childContent
               (RUPTrie T.Text resultContent)
@@ -109,18 +110,20 @@ handle :: ( Monad m
               (RUPTrie T.Text childSec)
               (RUPTrie T.Text resultSec)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
+          , (ArityMinusTypeList childSec cleanxs) ~ resultSec
           , childContent ~ TypeListToArity cleanxs resultContent
+          , childSec ~ TypeListToArity cleanxs resultSec
           ) => UrlChunks xs -- ^ Path to match against
             -> Maybe childContent -- ^ Possibly a function, ending in @ActionT z m ()@.
             -> Maybe (HandlerT childContent childSec m ()) -- ^ Potential child routes
             -> HandlerT resultContent resultSec m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
-  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
+  (Rooted _ trieContent,_,trieSec,trie401) <- lift $ execHandlerT cs
   tell ( extrude ts $ Rooted mvl trieContent
        , mempty
-       , extrude ts $ Rooted Nothing trieSec
-       , extrude ts $ Rooted Nothing trie401
+       , extrude ts trieSec
+       , extrude ts trie401
        )
 handle _ Nothing Nothing = return ()
 
@@ -137,7 +140,9 @@ parent :: ( Monad m
               (RUPTrie T.Text childSec)
               (RUPTrie T.Text resultSec)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
+          , (ArityMinusTypeList childSec cleanxs) ~ resultSec
           , childContent ~ TypeListToArity cleanxs resultContent
+          , childSec ~ TypeListToArity cleanxs resultSec
           ) => UrlChunks xs
             -> HandlerT childContent childSec m ()
             -> HandlerT resultContent resultSec m ()
