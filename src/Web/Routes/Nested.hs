@@ -18,8 +18,18 @@ module Web.Routes.Nested
   , ActionT
   , handle
   , parent
+  , auth
   , notFound
   , route
+  , handleNotFound
+  , lookupResponse
+  , handleUpload
+  , plain404
+  , lookupProper
+  , possibleFileExts
+  , trimFileExt
+  , getFileExt
+  , httpMethodToMSym
   ) where
 
 import           Web.Routes.Nested.Types as X
@@ -220,7 +230,7 @@ handleNotFound :: MonadIO m =>
                   Maybe B.ByteString
                -> FileExt
                -> Verb
-               -> Maybe (ActionT m ()) -- Possible
+               -> Maybe (ActionT m ())
                -> Request
                -> m (Maybe Response)
 handleNotFound acceptBS f v mnfcomp req =
