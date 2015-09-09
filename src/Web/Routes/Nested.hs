@@ -26,8 +26,10 @@ module Web.Routes.Nested
   , notFound
   -- * Entry Point
   , route
+  -- * Extraction
+  , extractAuthSym
   -- * Utilities
-  , handleNotFound
+  , actionToResponse
   , lookupResponse
   , handleUpload
   , plain404
@@ -200,25 +202,19 @@ type Application' m = Request -> (Response -> IO ResponseReceived) -> m Response
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         , Eq checksum
-         ) => (Request -> checksum)
-           -> (checksum -> Response)
-           -> ([sec] -> m checksum)
-           -> HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
+         ) => HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
            -> Application' m
-route getAuth putAuth chksum h req respond = do
-  (rtrie, nftrie, strie, srtrie) <- execHandlerT h
+route h req respond = do
+  (rtrie, nftrie,_,_) <- execHandlerT h
   let mNotFound = P.lookupNearestParent (pathInfo req) nftrie
-      ss = P.lookupThrough (pathInfo req) strie
-      mAuthFail = P.lookupNearestParent (pathInfo req) srtrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
 
-  notFoundBasic <- handleNotFound acceptBS Html GET mNotFound plain404 req
+  notFoundBasic <- actionToResponse acceptBS Html GET mNotFound plain404 req
 
   mResp <- runMaybeT $ do
     v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    failResp <- lift $ handleNotFound acceptBS fe v mNotFound plain404 req
+    failResp <- lift $ actionToResponse acceptBS fe v mNotFound plain404 req
 
     -- only runs `trimFileExt` when last lookup cell is a Literal
     return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
@@ -232,22 +228,57 @@ route getAuth putAuth chksum h req respond = do
   fromMaybe (liftIO $ respond notFoundBasic) mResp
 
 
-handleNotFound :: MonadIO m =>
-                  Maybe B.ByteString
-               -> FileExt
-               -> Verb
-               -> Maybe (ActionT m ()) -- Potential results of 404 lookup
-               -> Response -- Default @404@
-               -> Request
-               -> m Response
-handleNotFound acceptBS f v mnfcomp default404 req = do
+extractAuthSym :: (Monad m) => HandlerT (ActionT m ()) sec m a -> Request -> m [sec]
+extractAuthSym hs req = do
+  (_,_,strie,_) <- execHandlerT hs
+  return $ P.lookupThrough (pathInfo req) strie
+
+
+extractAuthResp :: ( Monad m
+                   , MonadIO m
+                   ) => HandlerT (ActionT m ()) sec m a -> Application' m
+extractAuthResp hs req respond = do
+  (_,_,_,srtrie) <- execHandlerT hs
+  let mAuthFail = P.lookupNearestParent (pathInfo req) srtrie
+      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+      fe = getFileExt req
+
+  authBasic <- actionToResponse acceptBS Html GET mAuthFail plain401 req
+
+  mResp <- runMaybeT $ do
+    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
+    authResp <- lift $ actionToResponse acceptBS fe v mAuthFail plain401 req
+
+    -- only runs `trimFileExt` when last lookup cell is a Literal
+    return $ case P.lookupWithL trimFileExt (pathInfo req) srtrie of
+      Nothing -> fromMaybe (liftIO $ respond authResp) $ do
+        guard $ not $ null $ pathInfo req
+        guard $ trimFileExt (last $ pathInfo req) == "index"
+        foundM <- P.lookup (init $ pathInfo req) srtrie
+        return $ lookupResponse acceptBS fe v foundM authResp req respond
+      Just foundM -> lookupResponse acceptBS fe v foundM authResp req respond
+
+  fromMaybe (liftIO $ respond authBasic) mResp
+
+
+
+
+actionToResponse :: MonadIO m =>
+                    Maybe B.ByteString
+                 -> FileExt
+                 -> Verb
+                 -> Maybe (ActionT m ()) -- Potential results of 404 lookup
+                 -> Response -- Default @404@
+                 -> Request
+                 -> m Response
+actionToResponse acceptBS f v mnfcomp def req = do
   mx <- runMaybeT $ do
     nfcomp <- hoistMaybe mnfcomp
     vmapLit <- lift $ execWriterT $ runVerbListenerT nfcomp
     (_,femonad) <- hoistMaybe $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
     femap <- lift $ execWriterT $ runFileExtListenerT femonad
     hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
-  return $ fromMaybe default404 mx
+  return $ fromMaybe def mx
 
 -- | Turn an @ActionT@ into an @Application@ by providing a @FileExt@ and @Verb@
 -- to lookup.
@@ -297,6 +328,10 @@ handleUpload r' reqbf req' respond' = do
 -- | Default @404@ response
 plain404 :: Response
 plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
+
+-- | Default @401@ response
+plain401 :: Response
+plain401 = responseLBS status401 [("Content-Type","text/plain")] "401"
 
 -- | Given a possible @Accept@ header and file extension key, lookup the contents
 -- of a map.
