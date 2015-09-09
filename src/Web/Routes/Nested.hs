@@ -208,9 +208,9 @@ route h req respond = do
         guard $ not $ null $ pathInfo req
         guard $ trimFileExt (last $ pathInfo req) == "index"
         foundM <- P.lookup (init $ pathInfo req) rtrie
-        return $ continue acceptBS fe v foundM menf
+        return $ lookupResponse acceptBS fe v foundM menf req respond
 
-      Just foundM -> continue acceptBS fe v foundM menf
+      Just foundM -> lookupResponse acceptBS fe v foundM menf req respond
 
   fromMaybe (liftIO $ respond404 notFoundBasic) mResp
 
@@ -234,47 +234,44 @@ route h req respond = do
                 Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
       in onJustM handleEither mnfcomp
 
-
-    continue :: MonadIO m =>
-                Maybe B.ByteString
-             -> FileExt
-             -> Verb
-             -> ActionT m ()
-             -> Maybe Response
-             -> m ResponseReceived
-    continue acceptBS f v foundM mnfResp = do
-      vmapLit <- execWriterT $ runVerbListenerT foundM
-      continueMap acceptBS f v (supplyReq req $ unVerbs $ unUnion vmapLit) mnfResp req respond
-
     -- Respond with @plain404@ if no response is given
     respond404 :: Maybe Response -> IO ResponseReceived
     respond404 mr = respond $ fromMaybe plain404 mr
 
 
-continueMap :: MonadIO m =>
-               Maybe B.ByteString -- ^ @Accept@ header
-            -> FileExt
-            -> Verb
-            -> Map.Map Verb ( HandleUpload m
-                            , FileExtListenerT Response m ()
-                            )
-            -> Maybe Response -- ^ Potential @404@ page
-            -> Application' m
-continueMap acceptBS f v vmap mnfResp req respond = do
-  let respond404 mr = respond $ fromMaybe plain404 mr
-      failResp = liftIO $ respond404 mnfResp
+-- | Turn an @ActionT@ into an @Application@ by providing a @FileExt@ and @Verb@
+-- to lookup.
+lookupResponse :: MonadIO m =>
+                  Maybe B.ByteString -- @Accept@ header
+               -> FileExt
+               -> Verb
+               -> ActionT m ()
+               -> Maybe Response -- @404@ response
+               -> Application' m
+lookupResponse acceptBS f v foundM mnfResp req respond = do
+  vmapLit <- execWriterT $ runVerbListenerT foundM
+  continue $ supplyReq req $ unVerbs $ unUnion vmapLit
+  where
+    continue :: MonadIO m =>
+                Map.Map Verb ( HandleUpload m
+                             , FileExtListenerT Response m ()
+                             )
+             -> m ResponseReceived
+    continue vmap = do
+      let respond404 mr = respond $ fromMaybe plain404 mr
+          failResp = liftIO $ respond404 mnfResp
 
-  mResp <- runMaybeT $ do
-    (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
-    femap <- lift $ execWriterT $ runFileExtListenerT femonad
-    r <- hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
-    case mreqbodyf of
-      Nothing              -> return $ liftIO $ respond r
-      Just (reqbf,Nothing) -> return $ handleUpload r reqbf req respond
-      Just (reqbf,Just bl) -> case requestBodyLength req of
-        KnownLength bl' | bl' <= bl -> return $ handleUpload r reqbf req respond
-        _                           -> mzero
-  fromMaybe failResp mResp
+      mResp <- runMaybeT $ do
+        (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
+        femap <- lift $ execWriterT $ runFileExtListenerT femonad
+        r <- hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
+        case mreqbodyf of
+          Nothing              -> return $ liftIO $ respond r
+          Just (reqbf,Nothing) -> return $ handleUpload r reqbf req respond
+          Just (reqbf,Just bl) -> case requestBodyLength req of
+            KnownLength bl' | bl' <= bl -> return $ handleUpload r reqbf req respond
+            _                           -> mzero
+      fromMaybe failResp mResp
 
 
 -- | Terminate the request/response cycle by first handling request body data
