@@ -14,7 +14,9 @@ import Data.Monoid
 import qualified Data.Text.Lazy as LT
 
 
-main = run 3000 $ routeAuth (const True) (const id) (return . null) $ do
+main = run 3000 $ routeAuth (const True) -- always returns True as a checksum
+                            (const id) -- don't affect the response
+                            (return . null) $ do -- gives True checksum when no auth tokens are present
   handle (l "foo" </> o)
     (Just $ get $ text "foo!")    -- current
     $ Just $ do
