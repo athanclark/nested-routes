@@ -67,6 +67,7 @@ import           Data.Set.Class                    as Sets hiding (singleton)
 import           Control.Arrow
 import           Control.Error.Util
 import           Control.Applicative
+import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
@@ -293,33 +294,41 @@ extractAuthSym hs req = do
 -- (\r -> or <$> runReaderT (extractAuthSym routes r) ) :: Request -> m [Bool]
 
 
+extractNearestVia :: ( Functor m
+                     , Monad m
+                     , MonadIO m
+                     ) => (HandlerT (ActionT m ()) sec m a -> m (RUPTrie T.Text (ActionT m ())))
+                       -> Response -- ^ Default
+                       -> HandlerT (ActionT m ()) sec m a
+                       -> Application' m
+extractNearestVia extr def hs req respond = do
+  trie <- extr hs
+  let mAction = P.lookupNearestParent (pathInfo req) trie
+      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+      fe = getFileExt req
+
+  basicResp <- actionToResponse acceptBS Html GET mAction def req
+
+  mResp <- runMaybeT $ do
+    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
+    lift $ actionToResponse acceptBS fe v mAction def req
+
+  liftIO $ respond $ fromMaybe basicResp mResp
+
+
 extractAuthResp :: ( Functor m
                    , Monad m
                    , MonadIO m
                    ) => HandlerT (ActionT m ()) sec m a
                      -> Application' m
-extractAuthResp hs req respond = do
-  (_,_,_,srtrie) <- execHandlerT hs
-  let mAuthFail = P.lookupNearestParent (pathInfo req) srtrie
-      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      fe = getFileExt req
+extractAuthResp = extractNearestVia (execHandlerT >=> \(_,_,_,t) -> return t) plain401
 
-  authBasic <- actionToResponse acceptBS Html GET mAuthFail plain401 req
-
-  mResp <- runMaybeT $ do
-    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    authResp <- lift $ actionToResponse acceptBS fe v mAuthFail plain401 req
-
-    -- only runs `trimFileExt` when last lookup cell is a Literal
-    return $ case P.lookupWithL trimFileExt (pathInfo req) srtrie of
-      Nothing -> fromMaybe (liftIO $ respond authResp) $ do
-        guard $ not $ null $ pathInfo req
-        guard $ trimFileExt (last $ pathInfo req) == "index"
-        foundM <- P.lookup (init $ pathInfo req) srtrie
-        return $ lookupResponse acceptBS fe v foundM authResp req respond
-      Just foundM -> lookupResponse acceptBS fe v foundM authResp req respond
-
-  fromMaybe (liftIO $ respond authBasic) mResp
+extractNotFoundResp :: ( Functor m
+                       , Monad m
+                       , MonadIO m
+                       ) => HandlerT (ActionT m ()) sec m a
+                         -> Application' m
+extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
 
 
 

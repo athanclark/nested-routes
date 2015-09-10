@@ -7,12 +7,13 @@
 module Main where
 
 import Network.Wai.Handler.Warp
-import Network.HTTP.Types
 import Web.Routes.Nested
 import Data.Attoparsec.Text
 import Text.Regex
 import Data.Monoid
 import qualified Data.Text.Lazy as LT
+
+import Network.Wai
 
 
 main :: IO ()
@@ -22,8 +23,8 @@ main = run 3000 $ routeAuth (const True) -- always returns True as a checksum
   handle (l "foo" </> o)
     (Just $ get $ text "foo!")    -- current
     $ Just $ do
-      auth (return True) (get $ textStatus status501 "Unauthorized") $ do
-        handle (l "bar" </> o)      -- children
+      auth (return True) (get $ text "Unauthorized") $ do  -- children
+        handle (l "bar" </> o)
           (Just $ get $ do          -- current
              text "bar!"
              json ("json bar!" :: LT.Text)

@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                5.0.2
+Version:                5.0.3
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -223,6 +223,43 @@ Executable example
                       , poly-arity >= 0.0.4
                       , sets >= 0.0.5
                       , errors
+
+Executable example-stm
+  Default-Language:     Haskell2010
+  HS-Source-Dirs:       src
+                      , examples
+  GHC-Options:          -Wall
+  Main-Is:              STM.hs
+  Build-Depends:        base >= 4.6 && < 5
+                      , wai
+                      , wai-extra
+                      , wai-util
+                      , warp
+                      , http-types
+                      , http-media
+                      , mtl
+                      , transformers
+                      , witherable
+                      , composition
+                      , semigroups
+                      , bifunctors
+                      , constraints
+                      , containers
+                      , text
+                      , aeson
+                      , blaze-html
+                      , lucid
+                      , shakespeare
+                      , clay
+                      , bytestring
+                      , attoparsec
+                      , regex-compat
+                      , pred-trie >= 0.2.2
+                      , poly-arity >= 0.0.4
+                      , sets >= 0.0.5
+                      , errors
+                      , stm
+                      , cryptonite
 
 
 Source-Repository head
