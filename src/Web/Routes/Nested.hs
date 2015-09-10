@@ -59,7 +59,8 @@ import qualified Data.ByteString                   as B
 import qualified Data.ByteString.Lazy              as BL
 import           Data.Maybe                        (fromMaybe)
 import           Data.Witherable
-import           Data.Bifunctor
+import           Data.Functor.Syntax
+import           Data.Function.Poly
 import           Data.List
 import           Data.Function.Poly
 import           Data.Set.Class                    as Sets hiding (singleton)
@@ -72,25 +73,26 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
+import           Control.Monad.Except
 
 
-type Tries x s = ( RUPTrie T.Text x
-                 , RUPTrie T.Text x
-                 , RUPTrie T.Text s
-                 , RUPTrie T.Text x
-                 )
+type Tries x s e = ( RUPTrie T.Text x
+                   , RUPTrie T.Text x
+                   , RUPTrie T.Text s
+                   , RUPTrie T.Text (e -> x) -- error will be last arg
+                   )
 
-newtype HandlerT x s m a = HandlerT
-  { runHandlerT :: WriterT (Tries x s) m a }
+newtype HandlerT x s e m a = HandlerT
+  { runHandlerT :: WriterT (Tries x s e) m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadIO
            , MonadTrans
-           , MonadWriter (Tries x s)
+           , MonadWriter (Tries x s e)
            )
 
-execHandlerT :: Monad m => HandlerT x s m a -> m (Tries x s)
+execHandlerT :: Monad m => HandlerT x s e m a -> m (Tries x s e)
 execHandlerT = execWriterT . runHandlerT
 
 type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
@@ -109,6 +111,9 @@ handle :: ( Monad m
               (RUPTrie T.Text childContent)
               (RUPTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
+              (RUPTrie T.Text (InjectLast e childContent))
+              (RUPTrie T.Text (InjectLast e resultContent))
+          , Extrude (UrlChunks xs)
               (RUPTrie T.Text childSec)
               (RUPTrie T.Text resultSec)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
@@ -117,8 +122,8 @@ handle :: ( Monad m
           , childSec ~ TypeListToArity cleanxs resultSec
           ) => UrlChunks xs -- ^ Path to match against
             -> Maybe childContent -- ^ Possibly a function, ending in @ActionT z m ()@.
-            -> Maybe (HandlerT childContent childSec m ()) -- ^ Potential child routes
-            -> HandlerT resultContent resultSec m ()
+            -> Maybe (HandlerT childContent childSec e m ()) -- ^ Potential child routes
+            -> HandlerT resultContent resultSec e m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
   (Rooted _ trieContent,_,trieSec,trie401) <- lift $ execHandlerT cs
@@ -139,6 +144,9 @@ parent :: ( Monad m
               (RUPTrie T.Text childContent)
               (RUPTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
+              (RUPTrie T.Text (InjectLast e childContent))
+              (RUPTrie T.Text (InjectLast e resultContent))
+          , Extrude (UrlChunks xs)
               (RUPTrie T.Text childSec)
               (RUPTrie T.Text resultSec)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
@@ -146,8 +154,8 @@ parent :: ( Monad m
           , childContent ~ TypeListToArity cleanxs resultContent
           , childSec ~ TypeListToArity cleanxs resultSec
           ) => UrlChunks xs
-            -> HandlerT childContent childSec m ()
-            -> HandlerT resultContent resultSec m ()
+            -> HandlerT childContent childSec e m ()
+            -> HandlerT resultContent resultSec e m ()
 parent ts cs = do
   (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
   tell ( extrude ts $ Rooted Nothing trieContent
@@ -160,16 +168,16 @@ parent ts cs = do
 auth :: ( Monad m
         , Functor m
         ) => m sec
-          -> content
-          -> HandlerT content sec m ()
-          -> HandlerT content sec m ()
-auth p authFail cs = do
+          -> (err -> content)
+          -> HandlerT content sec err m ()
+          -> HandlerT content sec err m ()
+auth p handleFail cs = do
   s <- lift p
   (rtrie,nftrie,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
   tell ( rtrie
        , nftrie
        , Rooted (Just s) trieSec
-       , Rooted (Just authFail) trie401
+       , Rooted (Just handleFail) trie401
        )
 
 
@@ -188,8 +196,8 @@ notFound :: ( Monad m
             , childContent ~ TypeListToArity cleanxs resultContent
             ) => UrlChunks xs
               -> Maybe childContent
-              -> Maybe (HandlerT childContent s m ())
-              -> HandlerT resultContent s m ()
+              -> Maybe (HandlerT childContent s e m ())
+              -> HandlerT resultContent s e m ()
 notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
   (Rooted _ ctrie,_,_,_) <- lift $ execHandlerT cs
@@ -209,30 +217,9 @@ type Application' m = Request -> (Response -> IO ResponseReceived) -> m Response
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) => HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
+         ) => HandlerT (ActionT m ()) sec e m a -- ^ Assembled @handle@ calls
            -> Application' m
-route h req respond = do
-  (rtrie, nftrie,_,_) <- execHandlerT h
-  let mNotFound = P.lookupNearestParent (pathInfo req) nftrie
-      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      fe = getFileExt req
-
-  notFoundBasic <- actionToResponse acceptBS Html GET mNotFound plain404 req
-
-  mResp <- runMaybeT $ do
-    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    failResp <- lift $ actionToResponse acceptBS fe v mNotFound plain404 req
-
-    -- only runs `trimFileExt` when last lookup cell is a Literal
-    return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
-      Nothing -> fromMaybe (liftIO $ respond failResp) $ do
-        guard $ not $ null $ pathInfo req
-        guard $ trimFileExt (last $ pathInfo req) == "index"
-        foundM <- P.lookup (init $ pathInfo req) rtrie
-        return $ lookupResponse acceptBS fe v foundM failResp req respond
-      Just foundM -> lookupResponse acceptBS fe v foundM failResp req respond
-
-  fromMaybe (liftIO $ respond notFoundBasic) mResp
+route = extractContent
 
 
 
@@ -240,23 +227,25 @@ routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
              , Eq checksum
-             ) => (Request -> checksum)
-               -> (checksum -> Response -> Response)
-               -> ([sec] -> m checksum)
-               -> HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
+             ) => (Request -> Maybe checksum)              -- ^ lookup
+               -> (checksum -> Response -> Response)       -- ^ set
+               -> (Request -> [sec] -> Maybe checksum -> m (Either err checksum)) -- ^ create
+
+               -> HandlerT (ActionT m ()) sec err m a -- ^ Assembled @handle@ calls
                -> Application' m
 routeAuth getAuth putAuth chk hs req respond = do
   ss <- extractAuthSym hs req
-  let oldData = getAuth req
-  newData <- chk ss
-  if oldData == newData then extractContent hs req $ respond . putAuth newData
-                        else extractAuthResp hs req respond
+  let mOldData = getAuth req
+  eNewData <- chk req ss mOldData
+  case eNewData of
+    Left e -> extractAuthResp e hs req respond
+    Right newData -> extractContent hs req $ respond . putAuth newData
 
 
 extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
-                  ) => HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
+                  ) => HandlerT (ActionT m ()) sec e m a -- ^ Assembled @handle@ calls
                     -> Application' m
 extractContent h req respond = do
   (rtrie, nftrie,_,_) <- execHandlerT h
@@ -284,7 +273,7 @@ extractContent h req respond = do
 
 extractAuthSym :: ( Functor m
                   , Monad m
-                  ) => HandlerT (ActionT m ()) sec m a
+                  ) => HandlerT (ActionT m ()) sec e m a
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
@@ -294,12 +283,42 @@ extractAuthSym hs req = do
 -- (\r -> or <$> runReaderT (extractAuthSym routes r) ) :: Request -> m [Bool]
 
 
+extractAuthResp :: ( Functor m
+                   , Monad m
+                   , MonadIO m
+                   ) => err
+                     -> HandlerT (ActionT m ()) sec err m a
+                     -> Application' m
+extractAuthResp e hs req respond = do
+  (_,_,_,trie) <- execHandlerT hs
+  let mAction = P.lookupNearestParent (pathInfo req) trie <~$> e
+      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+      fe = getFileExt req
+
+  basicResp <- actionToResponse acceptBS Html GET mAction plain401 req
+
+  mResp <- runMaybeT $ do
+    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
+    lift $ actionToResponse acceptBS fe v mAction plain401 req
+
+  liftIO $ respond $ fromMaybe basicResp mResp
+
+
+extractNotFoundResp :: ( Functor m
+                       , Monad m
+                       , MonadIO m
+                       ) => HandlerT (ActionT m ()) sec e m a
+                         -> Application' m
+extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
+
+
+
 extractNearestVia :: ( Functor m
                      , Monad m
                      , MonadIO m
-                     ) => (HandlerT (ActionT m ()) sec m a -> m (RUPTrie T.Text (ActionT m ())))
+                     ) => (HandlerT (ActionT m ()) sec e m a -> m (RUPTrie T.Text (ActionT m ())))
                        -> Response -- ^ Default
-                       -> HandlerT (ActionT m ()) sec m a
+                       -> HandlerT (ActionT m ()) sec e m a
                        -> Application' m
 extractNearestVia extr def hs req respond = do
   trie <- extr hs
@@ -314,22 +333,6 @@ extractNearestVia extr def hs req respond = do
     lift $ actionToResponse acceptBS fe v mAction def req
 
   liftIO $ respond $ fromMaybe basicResp mResp
-
-
-extractAuthResp :: ( Functor m
-                   , Monad m
-                   , MonadIO m
-                   ) => HandlerT (ActionT m ()) sec m a
-                     -> Application' m
-extractAuthResp = extractNearestVia (execHandlerT >=> \(_,_,_,t) -> return t) plain401
-
-extractNotFoundResp :: ( Functor m
-                       , Monad m
-                       , MonadIO m
-                       ) => HandlerT (ActionT m ()) sec m a
-                         -> Application' m
-extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
-
 
 
 

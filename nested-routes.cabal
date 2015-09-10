@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                5.0.3
+Version:                5.0.4
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -131,9 +131,11 @@ Library
                       , http-types
                       , http-media
                       , mtl
+                      , mtl-compat
                       , transformers
                       , witherable
                       , composition
+                      , composition-extra
                       , semigroups
                       , bifunctors
                       , constraints
@@ -148,7 +150,7 @@ Library
                       , attoparsec
                       , regex-compat
                       , pred-trie >= 0.2.2
-                      , poly-arity >= 0.0.4
+                      , poly-arity >= 0.0.6
                       , sets >= 0.0.5
                       , errors
 
@@ -168,6 +170,7 @@ Test-Suite spec
                       , regex-compat
                       , containers
                       , composition
+                      , composition-extra
                       , semigroups
                       , bifunctors
                       , text
@@ -180,6 +183,7 @@ Test-Suite spec
                       , constraints
                       , pred-trie
                       , mtl
+                      , mtl-compat
                       , wai
                       , warp
                       , transformers
@@ -203,9 +207,11 @@ Executable example
                       , http-types
                       , http-media
                       , mtl
+                      , mtl-compat
                       , transformers
                       , witherable
                       , composition
+                      , composition-extra
                       , semigroups
                       , bifunctors
                       , constraints
@@ -224,42 +230,47 @@ Executable example
                       , sets >= 0.0.5
                       , errors
 
-Executable example-stm
-  Default-Language:     Haskell2010
-  HS-Source-Dirs:       src
-                      , examples
-  GHC-Options:          -Wall
-  Main-Is:              STM.hs
-  Build-Depends:        base >= 4.6 && < 5
-                      , wai
-                      , wai-extra
-                      , wai-util
-                      , warp
-                      , http-types
-                      , http-media
-                      , mtl
-                      , transformers
-                      , witherable
-                      , composition
-                      , semigroups
-                      , bifunctors
-                      , constraints
-                      , containers
-                      , text
-                      , aeson
-                      , blaze-html
-                      , lucid
-                      , shakespeare
-                      , clay
-                      , bytestring
-                      , attoparsec
-                      , regex-compat
-                      , pred-trie >= 0.2.2
-                      , poly-arity >= 0.0.4
-                      , sets >= 0.0.5
-                      , errors
-                      , stm
-                      , cryptonite
+-- Executable example-stm
+--   Default-Language:     Haskell2010
+--   HS-Source-Dirs:       src
+--                       , examples
+--   GHC-Options:          -Wall
+--   Main-Is:              STM.hs
+--   Build-Depends:        base >= 4.6 && < 5
+--                       , wai
+--                       , wai-extra
+--                       , wai-session
+--                       , cookie
+--                       , wai-util
+--                       , warp
+--                       , http-types
+--                       , http-media
+--                       , mtl
+--                       , mtl-compat
+--                       , transformers
+--                       , witherable
+--                       , composition
+--                       , composition-extra
+--                       , semigroups
+--                       , bifunctors
+--                       , constraints
+--                       , containers
+--                       , text
+--                       , aeson
+--                       , blaze-html
+--                       , lucid
+--                       , shakespeare
+--                       , clay
+--                       , bytestring
+--                       , attoparsec
+--                       , regex-compat
+--                       , pred-trie >= 0.2.2
+--                       , poly-arity >= 0.0.4
+--                       , sets >= 0.0.5
+--                       , errors
+--                       , stm
+--                       , cryptonite
+--                       , memory
 
 
 Source-Repository head
