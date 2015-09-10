@@ -14,7 +14,7 @@ import Data.Monoid
 import qualified Data.Text.Lazy as LT
 
 
-main = run 3000 $ route $ do
+main = run 3000 $ routeAuth (const True) (const id) (return . null) $ do
   handle (l "foo" </> o)
     (Just $ get $ text "foo!")    -- current
     $ Just $ do

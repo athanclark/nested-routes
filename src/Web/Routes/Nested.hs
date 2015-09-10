@@ -26,6 +26,7 @@ module Web.Routes.Nested
   , notFound
   -- * Entry Point
   , route
+  , routeAuth
   -- * Extraction
   , extractAuthSym
   -- * Utilities
@@ -233,7 +234,58 @@ route h req respond = do
   fromMaybe (liftIO $ respond notFoundBasic) mResp
 
 
-extractAuthSym :: (Monad m) => HandlerT (ActionT m ()) sec m a -> Request -> m [sec]
+
+routeAuth :: ( Functor m
+             , Monad m
+             , MonadIO m
+             , Eq checksum
+             ) => (Request -> checksum)
+               -> (checksum -> Response -> Response)
+               -> ([sec] -> m checksum)
+               -> HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
+               -> Application' m
+routeAuth getAuth putAuth chk hs req respond = do
+  ss <- extractAuthSym hs req
+  let oldData = getAuth req
+  newData <- chk ss
+  if oldData == newData then extractContent hs req $ respond . putAuth newData
+                        else extractAuthResp hs req respond
+
+
+extractContent :: ( Functor m
+                  , Monad m
+                  , MonadIO m
+                  ) => HandlerT (ActionT m ()) sec m a -- ^ Assembled @handle@ calls
+                    -> Application' m
+extractContent h req respond = do
+  (rtrie, nftrie,_,_) <- execHandlerT h
+  let mNotFound = P.lookupNearestParent (pathInfo req) nftrie
+      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+      fe = getFileExt req
+
+  notFoundBasic <- actionToResponse acceptBS Html GET mNotFound plain404 req
+
+  mResp <- runMaybeT $ do
+    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
+    failResp <- lift $ actionToResponse acceptBS fe v mNotFound plain404 req
+
+    -- only runs `trimFileExt` when last lookup cell is a Literal
+    return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
+      Nothing -> fromMaybe (liftIO $ respond failResp) $ do
+        guard $ not $ null $ pathInfo req
+        guard $ trimFileExt (last $ pathInfo req) == "index"
+        foundM <- P.lookup (init $ pathInfo req) rtrie
+        return $ lookupResponse acceptBS fe v foundM failResp req respond
+      Just foundM -> lookupResponse acceptBS fe v foundM failResp req respond
+
+  fromMaybe (liftIO $ respond notFoundBasic) mResp
+
+
+extractAuthSym :: ( Functor m
+                  , Monad m
+                  ) => HandlerT (ActionT m ()) sec m a
+                    -> Request
+                    -> m [sec]
 extractAuthSym hs req = do
   (_,_,strie,_) <- execHandlerT hs
   return $ P.lookupThrough (pathInfo req) strie
@@ -241,9 +293,11 @@ extractAuthSym hs req = do
 -- (\r -> or <$> runReaderT (extractAuthSym routes r) ) :: Request -> m [Bool]
 
 
-extractAuthResp :: ( Monad m
+extractAuthResp :: ( Functor m
+                   , Monad m
                    , MonadIO m
-                   ) => HandlerT (ActionT m ()) sec m a -> Application' m
+                   ) => HandlerT (ActionT m ()) sec m a
+                     -> Application' m
 extractAuthResp hs req respond = do
   (_,_,_,srtrie) <- execHandlerT hs
   let mAuthFail = P.lookupNearestParent (pathInfo req) srtrie
