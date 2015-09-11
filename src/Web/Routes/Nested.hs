@@ -76,23 +76,23 @@ import           Control.Monad.Writer
 import           Control.Monad.Except
 
 
-type Tries x s e = ( RUPTrie T.Text x
-                   , RUPTrie T.Text x
-                   , RUPTrie T.Text s
-                   , RUPTrie T.Text (e -> x) -- error will be last arg
-                   )
+type Tries x s e e' = ( RUPTrie T.Text x
+                      , RUPTrie T.Text x
+                      , RUPTrie T.Text s
+                      , RUPTrie T.Text e
+                      )
 
-newtype HandlerT x s e m a = HandlerT
-  { runHandlerT :: WriterT (Tries x s e) m a }
+newtype HandlerT x sec err errSym m a = HandlerT
+  { runHandlerT :: WriterT (Tries x sec err errSym) m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadIO
            , MonadTrans
-           , MonadWriter (Tries x s e)
+           , MonadWriter (Tries x sec err errSym)
            )
 
-execHandlerT :: Monad m => HandlerT x s e m a -> m (Tries x s e)
+execHandlerT :: Monad m => HandlerT x sec err errSym m a -> m (Tries x sec err errSym)
 execHandlerT = execWriterT . runHandlerT
 
 type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
@@ -102,8 +102,10 @@ handle :: ( Monad m
           , Functor m
           , cleanxs ~ CatMaybes xs
           , HasResult childContent (ActionT m ())
+          , HasResult childErr     (e -> ActionT m ())
           , ExpectArity cleanxs childContent
           , ExpectArity cleanxs childSec
+          , ExpectArity cleanxs childErr
           , Singleton (UrlChunks xs)
               childContent
               (RUPTrie T.Text resultContent)
@@ -111,26 +113,28 @@ handle :: ( Monad m
               (RUPTrie T.Text childContent)
               (RUPTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text (InjectLast e childContent))
-              (RUPTrie T.Text (InjectLast e resultContent))
-          , Extrude (UrlChunks xs)
               (RUPTrie T.Text childSec)
               (RUPTrie T.Text resultSec)
+          , Extrude (UrlChunks xs)
+              (RUPTrie T.Text childErr)
+              (RUPTrie T.Text resultErr)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
           , (ArityMinusTypeList childSec cleanxs) ~ resultSec
+          , (ArityMinusTypeList childErr cleanxs) ~ resultErr
           , childContent ~ TypeListToArity cleanxs resultContent
           , childSec ~ TypeListToArity cleanxs resultSec
+          , childErr ~ TypeListToArity cleanxs resultErr
           ) => UrlChunks xs -- ^ Path to match against
             -> Maybe childContent -- ^ Possibly a function, ending in @ActionT z m ()@.
-            -> Maybe (HandlerT childContent childSec e m ()) -- ^ Potential child routes
-            -> HandlerT resultContent resultSec e m ()
+            -> Maybe (HandlerT childContent  childSec  childErr  e m ()) -- ^ Potential child routes
+            ->        HandlerT resultContent resultSec resultErr e m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
-  (Rooted _ trieContent,_,trieSec,trie401) <- lift $ execHandlerT cs
+  (Rooted _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
   tell ( extrude ts $ Rooted mvl trieContent
-       , mempty
+       , extrude ts trieNotFound
        , extrude ts trieSec
-       , extrude ts trie401
+       , extrude ts trieErr
        )
 handle _ Nothing Nothing = return ()
 
@@ -144,40 +148,42 @@ parent :: ( Monad m
               (RUPTrie T.Text childContent)
               (RUPTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text (InjectLast e childContent))
-              (RUPTrie T.Text (InjectLast e resultContent))
+              (RUPTrie T.Text childErr)
+              (RUPTrie T.Text resultErr)
           , Extrude (UrlChunks xs)
               (RUPTrie T.Text childSec)
               (RUPTrie T.Text resultSec)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
           , (ArityMinusTypeList childSec cleanxs) ~ resultSec
+          , (ArityMinusTypeList childErr cleanxs) ~ resultErr
           , childContent ~ TypeListToArity cleanxs resultContent
           , childSec ~ TypeListToArity cleanxs resultSec
+          , childErr ~ TypeListToArity cleanxs resultErr
           ) => UrlChunks xs
-            -> HandlerT childContent childSec e m ()
-            -> HandlerT resultContent resultSec e m ()
+            -> HandlerT childContent  childSec  childErr  e m ()
+            -> HandlerT resultContent resultSec resultErr e m ()
 parent ts cs = do
-  (Rooted _ trieContent,_,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
-  tell ( extrude ts $ Rooted Nothing trieContent
-       , mempty
-       , extrude ts $ Rooted Nothing trieSec
-       , extrude ts $ Rooted Nothing trie401
+  (trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
+  tell ( extrude ts trieContent
+       , extrude ts trieNotFound
+       , extrude ts trieSec
+       , extrude ts trieErr
        )
 
 
 auth :: ( Monad m
         , Functor m
         ) => m sec
-          -> (err -> content)
-          -> HandlerT content sec err m ()
-          -> HandlerT content sec err m ()
+          -> err
+          -> HandlerT content sec err e m ()
+          -> HandlerT content sec err e m ()
 auth p handleFail cs = do
   s <- lift p
-  (rtrie,nftrie,Rooted _ trieSec,Rooted _ trie401) <- lift $ execHandlerT cs
+  (rtrie,nftrie,Rooted _ trieSec,Rooted _ trieErr) <- lift $ execHandlerT cs
   tell ( rtrie
        , nftrie
        , Rooted (Just s) trieSec
-       , Rooted (Just handleFail) trie401
+       , Rooted (Just handleFail) trieErr
        )
 
 
@@ -185,26 +191,39 @@ notFound :: ( Monad m
             , Functor m
             , cleanxs ~ CatMaybes xs
             , HasResult childContent (ActionT m ())
+            , HasResult childErr     (e -> ActionT m ())
             , ExpectArity cleanxs childContent
+            , ExpectArity cleanxs childSec
+            , ExpectArity cleanxs childErr
             , Singleton (UrlChunks xs)
                 childContent
                 (RUPTrie T.Text resultContent)
             , Extrude (UrlChunks xs)
                 (RUPTrie T.Text childContent)
                 (RUPTrie T.Text resultContent)
+            , Extrude (UrlChunks xs)
+                (RUPTrie T.Text childSec)
+                (RUPTrie T.Text resultSec)
+            , Extrude (UrlChunks xs)
+                (RUPTrie T.Text childErr)
+                (RUPTrie T.Text resultErr)
             , (ArityMinusTypeList childContent cleanxs) ~ resultContent
+            , (ArityMinusTypeList childSec cleanxs) ~ resultSec
+            , (ArityMinusTypeList childErr cleanxs) ~ resultErr
             , childContent ~ TypeListToArity cleanxs resultContent
+            , childSec ~ TypeListToArity cleanxs resultSec
+            , childErr ~ TypeListToArity cleanxs resultErr
             ) => UrlChunks xs
               -> Maybe childContent
-              -> Maybe (HandlerT childContent s e m ())
-              -> HandlerT resultContent s e m ()
+              -> Maybe (HandlerT childContent  childSec  childErr  e m ())
+              ->        HandlerT resultContent resultSec resultErr e m ()
 notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
-  (Rooted _ ctrie,_,_,_) <- lift $ execHandlerT cs
-  tell ( mempty
-       , extrude ts $ Rooted mvl ctrie
-       , mempty
-       , mempty
+  (trieContent,Rooted _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
+  tell ( extrude ts trieContent
+       , extrude ts $ Rooted mvl trieNotFound
+       , extrude ts trieSec
+       , extrude ts trieErr
        )
 notFound _ Nothing Nothing = return ()
 
@@ -217,7 +236,7 @@ type Application' m = Request -> (Response -> IO ResponseReceived) -> m Response
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) => HandlerT (ActionT m ()) sec e m a -- ^ Assembled @handle@ calls
+         ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
            -> Application' m
 route = extractContent
 
@@ -229,9 +248,9 @@ routeAuth :: ( Functor m
              , Eq checksum
              ) => (Request -> Maybe checksum)              -- ^ lookup
                -> (checksum -> Response -> Response)       -- ^ set
-               -> (Request -> [sec] -> Maybe checksum -> m (Either err checksum)) -- ^ create
+               -> (Request -> [sec] -> Maybe checksum -> m (Either e checksum)) -- ^ create
 
-               -> HandlerT (ActionT m ()) sec err m a -- ^ Assembled @handle@ calls
+               -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
                -> Application' m
 routeAuth getAuth putAuth chk hs req respond = do
   ss <- extractAuthSym hs req
@@ -245,7 +264,7 @@ routeAuth getAuth putAuth chk hs req respond = do
 extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
-                  ) => HandlerT (ActionT m ()) sec e m a -- ^ Assembled @handle@ calls
+                  ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
                     -> Application' m
 extractContent h req respond = do
   (rtrie, nftrie,_,_) <- execHandlerT h
@@ -273,7 +292,7 @@ extractContent h req respond = do
 
 extractAuthSym :: ( Functor m
                   , Monad m
-                  ) => HandlerT (ActionT m ()) sec e m a
+                  ) => HandlerT x sec err e m a
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
@@ -286,8 +305,8 @@ extractAuthSym hs req = do
 extractAuthResp :: ( Functor m
                    , Monad m
                    , MonadIO m
-                   ) => err
-                     -> HandlerT (ActionT m ()) sec err m a
+                   ) => e
+                     -> HandlerT x sec (e -> ActionT m ()) e m a
                      -> Application' m
 extractAuthResp e hs req respond = do
   (_,_,_,trie) <- execHandlerT hs
@@ -307,7 +326,7 @@ extractAuthResp e hs req respond = do
 extractNotFoundResp :: ( Functor m
                        , Monad m
                        , MonadIO m
-                       ) => HandlerT (ActionT m ()) sec e m a
+                       ) => HandlerT (ActionT m ()) sec err e m a
                          -> Application' m
 extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
 
@@ -316,9 +335,9 @@ extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t
 extractNearestVia :: ( Functor m
                      , Monad m
                      , MonadIO m
-                     ) => (HandlerT (ActionT m ()) sec e m a -> m (RUPTrie T.Text (ActionT m ())))
+                     ) => (HandlerT (ActionT m ()) sec err e m a -> m (RUPTrie T.Text (ActionT m ())))
                        -> Response -- ^ Default
-                       -> HandlerT (ActionT m ()) sec e m a
+                       -> HandlerT (ActionT m ()) sec err e m a
                        -> Application' m
 extractNearestVia extr def hs req respond = do
   trie <- extr hs
