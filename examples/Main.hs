@@ -22,23 +22,18 @@ import qualified Data.Text.Lazy as LT
 
 data AuthErr = NeedsAuth
 
-getAuth :: Request -> Maybe ()
-getAuth req = Just ()
+newAuth :: Monad m => Request -> [()] -> m (Either AuthErr ())
+newAuth req ss | null ss = return $ Right () -- no auth needed!
+               | otherwise = return $ Left NeedsAuth -- or you could fail
+                -- if `old /=` something you generate from `req`.
 
 putAuth :: () -> Response -> Response
 putAuth d resp = resp
 
-newAuth :: Monad m => Request -> [()] -> Maybe () -> m (Either AuthErr ())
-newAuth req ss Nothing = return $ Right () -- new session
-newAuth req ss (Just old) | null ss = return $ Right () -- no auth needed!
-                          | otherwise = return $ Left NeedsAuth -- or you could fail
-                              -- if `old /=` something you generate from `req`.
-
 
 main :: IO ()
-main = run 3000 $ routeAuth getAuth -- always returns True as a checksum
-                            putAuth -- don't affect the response
-                            newAuth $ do -- gives True checksum when no auth tokens are present
+main = run 3000 $ routeAuth newAuth -- always returns True as a checksum
+                            putAuth $ do -- don't affect the response
   handle (l "foo" </> o)
     (Just $ get $ text "foo!")    -- current
     $ Just $ do

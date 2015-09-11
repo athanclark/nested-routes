@@ -28,7 +28,11 @@ module Web.Routes.Nested
   , route
   , routeAuth
   -- * Extraction
+  , extractContent
+  , extractNotFoundResp
   , extractAuthSym
+  , extractAuthResp
+  , extractNearestVia
   -- * Utilities
   , actionToResponse
   , lookupResponse
@@ -246,18 +250,16 @@ routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
              , Eq checksum
-             ) => (Request -> Maybe checksum)              -- ^ lookup
-               -> (checksum -> Response -> Response)       -- ^ set
-               -> (Request -> [sec] -> Maybe checksum -> m (Either e checksum)) -- ^ create
+             ) => (Request -> [sec] -> m (Either e checksum)) -- ^ create
+               -> (checksum -> Response -> Response)          -- ^ set
 
                -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
                -> Application' m
-routeAuth getAuth putAuth chk hs req respond = do
+routeAuth makeAuth putAuth hs req respond = do
   ss <- extractAuthSym hs req
-  let mOldData = getAuth req
-  eNewData <- chk req ss mOldData
+  eNewData <- makeAuth req ss
   case eNewData of
-    Left e -> extractAuthResp e hs req respond
+    Left  e       -> extractAuthResp e hs req respond
     Right newData -> extractContent hs req $ respond . putAuth newData
 
 
@@ -490,9 +492,3 @@ httpMethodToMSym x | x == methodGet    = Just GET
                    | x == methodPut    = Just PUT
                    | x == methodDelete = Just DELETE
                    | otherwise         = Nothing
-
-
--- * Utilities
-
-onJustM :: Monad m => (a -> m (Maybe b)) -> Maybe a -> m (Maybe b)
-onJustM = maybe (return Nothing)

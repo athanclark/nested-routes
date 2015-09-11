@@ -131,13 +131,11 @@ Library
                       , http-types
                       , http-media
                       , mtl
-                      , mtl-compat
                       , transformers
                       , witherable
                       , composition
                       , composition-extra
                       , semigroups
-                      , bifunctors
                       , constraints
                       , containers
                       , text
@@ -172,7 +170,6 @@ Test-Suite spec
                       , composition
                       , composition-extra
                       , semigroups
-                      , bifunctors
                       , text
                       , aeson
                       , wai-util
@@ -183,7 +180,6 @@ Test-Suite spec
                       , constraints
                       , pred-trie
                       , mtl
-                      , mtl-compat
                       , wai
                       , warp
                       , transformers
@@ -199,7 +195,7 @@ Executable example
                       , examples
   GHC-Options:          -Wall
   Main-Is:              Main.hs
-  Build-Depends:        base >= 4.6 && < 5
+  Build-Depends:        base
                       , wai
                       , wai-extra
                       , wai-util
@@ -207,13 +203,11 @@ Executable example
                       , http-types
                       , http-media
                       , mtl
-                      , mtl-compat
                       , transformers
                       , witherable
                       , composition
                       , composition-extra
                       , semigroups
-                      , bifunctors
                       , constraints
                       , containers
                       , text

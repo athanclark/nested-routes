@@ -1,5 +1,10 @@
 flags: {}
 packages:
 - '.'
-extra-deps: []
-resolver: nightly-2015-08-06
+extra-deps:
+  - poly-arity-0.0.6
+  - sets-0.0.5
+  - wai-util-0.8
+  - commutative-0.0.1.4
+  - http-accept-0.2
+resolver: nightly-2015-09-10
