@@ -298,10 +298,8 @@ extractAuthSym :: ( Functor m
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
-  (_,_,strie,_) <- execHandlerT hs
-  return $ P.lookupThrough (pathInfo req) strie
-
--- (\r -> or <$> runReaderT (extractAuthSym routes r) ) :: Request -> m [Bool]
+  (_,_,trie,_) <- execHandlerT hs
+  return $ P.lookupThrough (pathInfo req) trie
 
 
 extractAuthResp :: ( Functor m
@@ -315,13 +313,10 @@ extractAuthResp e hs req respond = do
   let mAction = P.lookupNearestParent (pathInfo req) trie <~$> e
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
-
   basicResp <- actionToResponse acceptBS Html GET mAction plain401 req
-
   mResp <- runMaybeT $ do
     v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
     lift $ actionToResponse acceptBS fe v mAction plain401 req
-
   liftIO $ respond $ fromMaybe basicResp mResp
 
 
@@ -331,7 +326,6 @@ extractNotFoundResp :: ( Functor m
                        ) => HandlerT (ActionT m ()) sec err e m a
                          -> Application' m
 extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
-
 
 
 extractNearestVia :: ( Functor m
@@ -346,31 +340,27 @@ extractNearestVia extr def hs req respond = do
   let mAction = P.lookupNearestParent (pathInfo req) trie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
-
   basicResp <- actionToResponse acceptBS Html GET mAction def req
-
   mResp <- runMaybeT $ do
     v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
     lift $ actionToResponse acceptBS fe v mAction def req
-
   liftIO $ respond $ fromMaybe basicResp mResp
-
 
 
 actionToResponse :: MonadIO m =>
                     Maybe B.ByteString
                  -> FileExt
                  -> Verb
-                 -> Maybe (ActionT m ()) -- Potential results of 404 lookup
+                 -> Maybe (ActionT m ()) -- Potential results to lookup
                  -> Response -- Default Response
                  -> Request
                  -> m Response
-actionToResponse acceptBS f v mnfcomp def req = do
+actionToResponse acceptBS f v mAction def req = do
   mx <- runMaybeT $ do
-    nfcomp <- hoistMaybe mnfcomp
-    vmapLit <- lift $ execWriterT $ runVerbListenerT nfcomp
-    (_,femonad) <- hoistMaybe $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmapLit
-    femap <- lift $ execWriterT $ runFileExtListenerT femonad
+    action <- hoistMaybe mAction
+    vmap <- lift $ execWriterT $ runVerbListenerT action
+    (_,fexts) <- hoistMaybe $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmap
+    femap <- lift $ execWriterT $ runFileExtListenerT fexts
     hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
   return $ fromMaybe def mx
 
