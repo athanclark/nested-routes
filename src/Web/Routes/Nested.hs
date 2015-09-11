@@ -75,6 +75,7 @@ import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
+import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
 import           Control.Monad.Except
@@ -249,18 +250,18 @@ route = extractContent
 routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
-             , Eq checksum
-             ) => (Request -> [sec] -> m (Either e checksum)) -- ^ create
-               -> (checksum -> Response -> Response)          -- ^ set
-
+             ) => (Request -> [sec] -> ExceptT e m checksum) -- ^ create
+               -> (checksum -> m (Response -> Response))     -- ^ set
                -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
                -> Application' m
 routeAuth makeAuth putAuth hs req respond = do
   ss <- extractAuthSym hs req
-  eNewData <- makeAuth req ss
+  eNewData <- runExceptT $ makeAuth req ss
   case eNewData of
     Left  e       -> extractAuthResp e hs req respond
-    Right newData -> extractContent hs req $ respond . putAuth newData
+    Right newData -> do
+      f <- putAuth newData
+      extractContent hs req $ respond . f
 
 
 extractContent :: ( Functor m
