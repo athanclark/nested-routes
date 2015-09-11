@@ -178,12 +178,11 @@ parent ts cs = do
 
 auth :: ( Monad m
         , Functor m
-        ) => m sec
+        ) => sec
           -> err
           -> HandlerT content sec err e m ()
           -> HandlerT content sec err e m ()
-auth p handleFail cs = do
-  s <- lift p
+auth s handleFail cs = do
   (rtrie,nftrie,Rooted _ trieSec,Rooted _ trieErr) <- lift $ execHandlerT cs
   tell ( rtrie
        , nftrie

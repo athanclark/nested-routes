@@ -19,41 +19,62 @@ import Control.Monad.Error.Class
 
 
 
--- Checksums are ()
--- `sec` is also ()
-
+type Checksum = ()
+data AuthRole = AuthRole
 data AuthErr = NeedsAuth
 
+-- | If you fail here and throw an AuthErr, then the user was not authorized to
+-- under the conditions set by @ss :: [AuthRole]@, and based on the authentication
+-- of that user's session from the @Request@ object. Note that we could have a
+-- shared cache of authenticated sessions, by adding more constraints on @m@ like
+-- @MonadIO@.
+-- For instance, even if there are [] auth roles, we could still include a header/timestamp
+-- pair to uniquely identify the guest. Or, we could equally change @Checksum ~ Maybe Token@,
+-- so a guest just returns Nothing, and we could handle the case in @putAuth@ to
+-- not do anything.
 newAuth :: ( Monad m
            , MonadError AuthErr m
-           ) => Request -> [()] -> m ()
+           ) => Request -> [AuthRole] -> m Checksum
 newAuth req ss | null ss   = return () -- no auth needed!
                | otherwise = throwError NeedsAuth -- or you could fail
                 -- if `old /=` something you generate from `req`.
 
-putAuth :: Monad m => () -> m (Response -> Response)
+-- | This is ran only on success - that the user has been authenticated again
+-- and we can continue placing the checksum in a session cookie. Best used with
+-- @mapResponseHeaders@ and @getCurrentTime@ (for a timestamp). Or you could
+-- include both in @Checksum@. Or you could make it @Maybe Checksum@, so you
+-- don't always have to change the response, but still consider it a successful
+-- request / response in terms of being authenticated and authorized (as a guest).
+putAuth :: Monad m => Checksum -> m (Response -> Response)
 putAuth d = return id
 
 
 main :: IO ()
 main = run 3000 $ routeAuth newAuth -- always returns True as a checksum
                             putAuth $ -- don't affect the response
-  handle o (Just $ get $ text "Home") $ Just $ do
-    handle (l "foo" </> o)
-      (Just $ get $ text "foo!")    -- current
-      $ Just $ do
-        auth (return ()) (\NeedsAuth -> get $ textStatus status401 "Unauthorized >:c") $ do
-          handle (l "bar" </> o)      -- children
-            (Just $ get $ do          -- current
-               text "bar!"
-               json ("json bar!" :: LT.Text)
-            ) Nothing                 -- children
-          handle (p ("double", double) </> o)
-            (Just $ \(d :: Double) -> -- current
-               get $ text $ (LT.pack $ show d) <> " foos"
-            ) Nothing                -- children
-    handle (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o)
-      (Just $ \(e :: [String]) ->   -- current
-         get $ text $ (LT.pack $ show e) <> " email"
-      ) Nothing                     -- chilren
-    notFound o (Just $ get $ textStatus status404 "Not Found :(") Nothing
+  handle o (Just rootHandle) $ Just $ do
+    handle fooRoute (Just fooHandle) $ Just $
+      auth AuthRole unauthHandle $ do
+        handle barRoute    (Just barHandle)    Nothing
+        handle doubleRoute (Just doubleHandle) Nothing
+    handle emailRoute (Just emailHandle) Nothing
+    notFound o (Just notFoundHandle) Nothing
+  where
+    rootHandle = get $ text "Home"
+
+    fooRoute = l "foo" </> o
+    fooHandle = get $ text "foo!"
+
+    barRoute = l "bar" </> o
+    barHandle =  get $ do
+      text "bar!"
+      json ("json bar!" :: LT.Text)
+
+    doubleRoute = p ("double", double) </> o
+    doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
+
+    emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
+    emailHandle e = get $ text $ LT.pack (show e) <> " email"
+
+    unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
+    notFoundHandle = get $ textStatus status404 "Not Found :("
