@@ -147,7 +147,7 @@ Library
                       , bytestring
                       , attoparsec
                       , regex-compat
-                      , pred-trie >= 0.2.4
+                      , pred-trie >= 0.2.4.1
                       , poly-arity >= 0.0.6
                       , sets >= 0.0.5
                       , errors
