@@ -29,10 +29,15 @@ textHeaders :: Monad m => RequestHeaders -> LT.Text -> FileExtListenerT Response
 textHeaders = textStatusHeaders status200
 
 textStatusHeaders :: Monad m => Status -> RequestHeaders -> LT.Text -> FileExtListenerT Response m ()
-textStatusHeaders s hs i =
+textStatusHeaders = textStatusHeadersWith id
+
+textStatusHeadersWith :: Monad m =>
+                         (Response -> Response) -> Status -> RequestHeaders -> LT.Text
+                      -> FileExtListenerT Response m ()
+textStatusHeadersWith f s hs i =
   let r = textOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton Text r
+    FileExts $ singleton Text $ f r
 
 
 
