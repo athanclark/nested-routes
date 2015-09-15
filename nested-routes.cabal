@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                5.0.6
+Version:                5.0.7
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -147,7 +147,7 @@ Library
                       , bytestring
                       , attoparsec
                       , regex-compat
-                      , pred-trie >= 0.2.4.2
+                      , pred-trie >= 0.2.4.3
                       , poly-arity >= 0.0.6
                       , sets >= 0.0.5
                       , errors
