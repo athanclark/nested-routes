@@ -39,6 +39,7 @@ newtype Verbs m r = Verbs
   { unVerbs :: Map Verb (ResponseSpec r m)
   } deriving (Monoid, HasUnion, HasEmpty)
 
+-- | To compensate for responses that want to peek into the @Request@ object.
 supplyReq :: Request
           -> Map Verb (ResponseSpec r m)
           -> Map Verb (HandleUpload m, r)

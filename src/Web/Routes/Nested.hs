@@ -241,6 +241,8 @@ notFound _ Nothing Nothing = return ()
 type Application' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
 type Middleware' m = Application' m -> Application' m
 
+type AcceptHeader = B.ByteString
+
 
 -- | Turns a @HandlerT@ into a Wai @Application@
 route :: ( Functor m
@@ -361,27 +363,39 @@ extractNearestVia extr def hs req respond = do
   liftIO $ respond $ fromMaybe basicResp mResp
 
 
+-- | Consumes the @Verb@ parameter, and delegates the rest of the task to
 actionToResponse :: MonadIO m =>
-                    Maybe B.ByteString
+                    Maybe AcceptHeader
                  -> FileExt
                  -> Verb
                  -> Maybe (ActionT m ()) -- ^ Potential results to lookup
                  -> Response -- ^ Default Response
                  -> Request
                  -> m Response
-actionToResponse acceptBS f v mAction def req = do
+actionToResponse mAcceptBS f v mAction def req = do
   mx <- runMaybeT $ do
     action <- hoistMaybe mAction
     vmap <- lift $ execWriterT $ runVerbListenerT action
     (_,fexts) <- hoistMaybe $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmap
     femap <- lift $ execWriterT $ runFileExtListenerT fexts
-    hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
+    hoistMaybe $ lookupProper mAcceptBS f $ unFileExts femap
   return $ fromMaybe def mx
+
+-- actionToVMap :: MonadIO m =>
+--              -> ActionT m () -- ^ Potential results to lookup
+--              -> m (Verbs m r)
+--                 Maybe AcceptHeader
+--              -> Verb
+--              -> Response -- ^ Default Response
+--              -> Request
+--              -> m Response
+actionToFEMap action = lift $ execWriterT $ runVerbListenerT action
+
 
 -- | Turn an @ActionT@ into an @Application@ by providing a @FileExt@ and @Verb@
 -- to lookup.
 lookupResponse :: MonadIO m =>
-                  Maybe B.ByteString -- @Accept@ header
+                  Maybe AcceptHeader -- @Accept@ header
                -> FileExt
                -> Verb
                -> ActionT m ()
@@ -431,9 +445,10 @@ plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
 plain401 :: Response
 plain401 = responseLBS status401 [("Content-Type","text/plain")] "401"
 
+
 -- | Given a possible @Accept@ header and file extension key, lookup the contents
 -- of a map.
-lookupProper :: Maybe B.ByteString -> FileExt -> Map.Map FileExt a -> Maybe a
+lookupProper :: Maybe AcceptHeader -> FileExt -> Map.Map FileExt a -> Maybe a
 lookupProper maccept k xs =
   let attempts = maybe [Html,Text,Json,JavaScript,Css]
                    (possibleFileExts k) maccept
@@ -445,7 +460,7 @@ lookupProper maccept k xs =
 
 -- | Takes a subject file extension and an @Accept@ header, and returns the other
 -- types of file types handleable, in order of prescedence.
-possibleFileExts :: FileExt -> B.ByteString -> [FileExt]
+possibleFileExts :: FileExt -> AcceptHeader -> [FileExt]
 possibleFileExts fe accept =
   let computed = sortFE fe $ nub $ concat $
         catMaybes [ mapAccept [ ("application/json" :: B.ByteString, [Json])
