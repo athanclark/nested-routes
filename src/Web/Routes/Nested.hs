@@ -29,7 +29,7 @@ module Web.Routes.Nested
   , routeAuth
   -- * Extraction
   , extractContent
-  , extractNotFoundResp
+  , extractNotFound
   , extractAuthSym
   , extractAuthResp
   , extractNearestVia
@@ -55,13 +55,17 @@ import           Network.HTTP.Types
 import           Network.HTTP.Media
 import           Network.Wai
 
-import           Data.Trie.Pred.Types (RootedPredTrie (..))
+import           Data.Trie.Pred.Types (RootedPredTrie (..), PredTrie (..))
 import qualified Data.Trie.Pred.Types              as PT -- only using lookups
+import           Data.Trie.Pred.Step (PredSteps (..), PredStep (..))
 import qualified Data.Trie.Class                   as TC
 import qualified Data.Text                         as T
 import qualified Data.Map                          as Map
+import           Data.Trie.Map (MapStep (..))
 import qualified Data.ByteString                   as B
 import qualified Data.ByteString.Lazy              as BL
+import           Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty                as NE
 import           Data.Maybe                        (fromMaybe)
 import           Data.Witherable
 import           Data.Functor.Syntax
@@ -183,7 +187,7 @@ auth :: ( Monad m
         ) => sec
           -> err
           -> HandlerT content sec err e m ()
-auth s handleFail cs =
+auth s handleFail =
   tell ( mempty
        , mempty
        , RootedPredTrie (Just s) mempty
@@ -235,6 +239,8 @@ notFound _ Nothing Nothing = return ()
 
 
 type Application' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
+type Middleware' m = Application' m -> Application' m
+
 
 -- | Turns a @HandlerT@ into a Wai @Application@
 route :: ( Functor m
@@ -245,7 +251,9 @@ route :: ( Functor m
 route = extractContent
 
 
-
+-- | Given a security verification function, and a security updating function,
+-- turn a set of routes into a final application, where content is secured before
+-- being breached.
 routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
@@ -263,6 +271,8 @@ routeAuth makeAuth putAuth hs req respond = do
       extractContent hs req $ respond . f
 
 
+-- | Compress the content tries (normal and not-found responses) into a final
+-- application.
 extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
@@ -270,7 +280,7 @@ extractContent :: ( Functor m
                     -> Application' m
 extractContent h req respond = do
   (rtrie, nftrie,_,_) <- execHandlerT h
-  let mNotFound = (\(_,x,_) -> x) <$> PT.matchRPT (pathInfo req) nftrie
+  let mNotFound = getResultsFromMatch <$> PT.matchRPT (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
 
@@ -281,7 +291,7 @@ extractContent h req respond = do
     failResp <- lift $ actionToResponse acceptBS fe v mNotFound plain404 req
 
     -- only runs `trimFileExt` when last lookup cell is a Literal
-    return $ case TC.lookupWithL trimFileExt (pathInfo req) rtrie of
+    return $ case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
       Nothing -> fromMaybe (liftIO $ respond failResp) $ do
         guard $ not $ null $ pathInfo req
         guard $ trimFileExt (last $ pathInfo req) == "index"
@@ -292,6 +302,8 @@ extractContent h req respond = do
   fromMaybe (liftIO $ respond notFoundBasic) mResp
 
 
+-- | Manually fetch the security tokens / authorization roles affiliated with
+-- a request and your routing system.
 extractAuthSym :: ( Functor m
                   , Monad m
                   ) => HandlerT x sec err e m a
@@ -299,10 +311,8 @@ extractAuthSym :: ( Functor m
                     -> m [sec]
 extractAuthSym hs req = do
   (_,_,trie,_) <- execHandlerT hs
-  return $ (\(_,x,_) -> x) <$> PT.matchesRPT (pathInfo req) trie
+  return $ getResultsFromMatch <$> PT.matchesRPT (pathInfo req) trie
 
-
-type Middleware' m = Application' m -> Application' m
 
 extractAuthResp :: ( Functor m
                    , Monad m
@@ -312,7 +322,7 @@ extractAuthResp :: ( Functor m
                      -> Application' m
 extractAuthResp e hs req respond = do
   (_,_,_,trie) <- execHandlerT hs
-  let mAction = ((\(_,x,_) -> x) <$> PT.matchRPT (pathInfo req) trie) <$~> e
+  let mAction = (getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie) <$~> e
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
   basicResp <- actionToResponse acceptBS Html GET mAction plain401 req
@@ -322,12 +332,14 @@ extractAuthResp e hs req respond = do
   liftIO $ respond $ fromMaybe basicResp mResp
 
 
-extractNotFoundResp :: ( Functor m
-                       , Monad m
-                       , MonadIO m
-                       ) => HandlerT (ActionT m ()) sec err e m a
-                         -> Application' m
-extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
+-- | Turns the not-found trie into a final application, matching all routes under
+-- each @notFound@ node.
+extractNotFound :: ( Functor m
+                   , Monad m
+                   , MonadIO m
+                   ) => HandlerT (ActionT m ()) sec err e m a
+                     -> Application' m
+extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
 
 
 extractNearestVia :: ( Functor m
@@ -339,7 +351,7 @@ extractNearestVia :: ( Functor m
                        -> Application' m
 extractNearestVia extr def hs req respond = do
   trie <- extr hs
-  let mAction = (\(_,x,_) -> x) <$> PT.matchRPT (pathInfo req) trie
+  let mAction = getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
   basicResp <- actionToResponse acceptBS Html GET mAction def req
@@ -353,8 +365,8 @@ actionToResponse :: MonadIO m =>
                     Maybe B.ByteString
                  -> FileExt
                  -> Verb
-                 -> Maybe (ActionT m ()) -- Potential results to lookup
-                 -> Response -- Default Response
+                 -> Maybe (ActionT m ()) -- ^ Potential results to lookup
+                 -> Response -- ^ Default Response
                  -> Request
                  -> m Response
 actionToResponse acceptBS f v mAction def req = do
@@ -459,6 +471,9 @@ possibleFileExts fe accept =
     sortFE Css        xs = [Css, Text]              `intersect` xs
     sortFE Text       xs = [Text]                   `intersect` xs
 
+
+----- Internal Utilities -----------------------------------
+
 -- | Removes @.txt@ from @foo.txt@
 trimFileExt :: T.Text -> T.Text
 trimFileExt s = if endsWithAny (T.unpack s)
@@ -484,3 +499,29 @@ httpMethodToMSym x | x == methodGet    = Just GET
                    | x == methodPut    = Just PUT
                    | x == methodDelete = Just DELETE
                    | otherwise         = Nothing
+
+
+-- * Pred-Trie related -----------------
+
+-- | A quirky function for processing the last element of a lookup path, only
+-- on /literal/ matches.
+lookupWithLPT :: Ord s => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe a
+lookupWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
+  | null ts = getFirst $ First (goLit (f t) ls) <> foldMap (First . goPred) ps
+  | otherwise = getFirst $ First (goLit t ls) <> foldMap (First . goPred) ps
+  where
+    goLit t' xs = do (mx,mxs) <- Map.lookup t' xs
+                     if null ts then mx
+                                else lookupWithLPT f (NE.fromList ts) =<< mxs
+
+    goPred (PredStep _ p mx xs) = do
+      r <- p t
+      if null ts then mx <$~> r
+                 else lookupWithLPT f (NE.fromList ts) xs <$~> r
+
+lookupWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe a
+lookupWithLRPT _ [] (RootedPredTrie mx _) = mx
+lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (NE.fromList ts) xs
+
+getResultsFromMatch :: ([s],a,[s]) -> a
+getResultsFromMatch (_,x,_) = x
