@@ -29,7 +29,10 @@ import           Text.Regex
 import           Web.Routes.Nested.Types.UrlChunks
 import qualified Data.Text as T
 import           Data.List.NonEmpty
-import           Data.Trie.Pred.Unified
+import           Data.Trie.Pred.Types
+import           Data.Trie.Pred.Step
+import qualified Data.Trie.Map as MT
+import qualified Data.Map as Map
 
 
 type family CatMaybes (xs :: [Maybe *]) :: [*] where
@@ -42,8 +45,8 @@ class Singleton chunks a trie | chunks a -> trie where
   singleton :: chunks -> a -> trie
 
 -- Basis
-instance Singleton (UrlChunks '[]) a (RUPTrie T.Text a) where
-  singleton Root r = Rooted (Just r) []
+instance Singleton (UrlChunks '[]) a (RootedPredTrie T.Text a) where
+  singleton Root r = RootedPredTrie (Just r) emptyPT
 
 -- Successor
 instance ( Singleton (UrlChunks xs) a trie0
@@ -57,13 +60,16 @@ class Extend eitherUrlChunk child result | eitherUrlChunk child -> result where
   extend :: eitherUrlChunk -> child -> result
 
 -- | Literal case
-instance Extend (EitherUrlChunk  'Nothing) (RUPTrie T.Text a) (RUPTrie T.Text a) where
-  extend ((:=) t) (Rooted mx xs) = Rooted Nothing [UMore t mx xs]
+instance Extend (EitherUrlChunk  'Nothing) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
+  extend ((:=) t) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
+    PredTrie (MT.MapStep $ Map.singleton t (mx, Just xs)) mempty
 
 -- | Existentially quantified case
-instance Extend (EitherUrlChunk ('Just r)) (RUPTrie T.Text (r -> a)) (RUPTrie T.Text a) where
-  extend ((:~) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (eitherToMaybe . parseOnly q) mx xs]
-  extend ((:*) (t,q)) (Rooted mx xs) = Rooted Nothing [UPred t (matchRegex q . T.unpack)     mx xs]
+instance Extend (EitherUrlChunk ('Just r)) (RootedPredTrie T.Text (r -> a)) (RootedPredTrie T.Text a) where
+  extend ((:~) (i,q)) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
+    PredTrie mempty $ PredSteps [PredStep i (eitherToMaybe . parseOnly q) mx xs]
+  extend ((:*) (i,q)) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
+    PredTrie mempty $ PredSteps [PredStep i (matchRegex q . T.unpack) mx xs]
 
 
 -- | @FoldR Extend start chunks ~ result@
@@ -71,7 +77,7 @@ class Extrude chunks start result | chunks start -> result where
   extrude :: chunks -> start -> result
 
 -- Basis
-instance Extrude (UrlChunks '[]) (RUPTrie T.Text a) (RUPTrie T.Text a) where
+instance Extrude (UrlChunks '[]) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
   extrude Root r = r
 
 -- Successor

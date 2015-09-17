@@ -55,8 +55,9 @@ import           Network.HTTP.Types
 import           Network.HTTP.Media
 import           Network.Wai
 
-import           Data.Trie.Pred.Unified (RUPTrie (..))
-import qualified Data.Trie.Pred.Unified            as P -- only using lookups
+import           Data.Trie.Pred.Types (RootedPredTrie (..))
+import qualified Data.Trie.Pred.Types              as PT -- only using lookups
+import qualified Data.Trie.Class                   as TC
 import qualified Data.Text                         as T
 import qualified Data.Map                          as Map
 import qualified Data.ByteString                   as B
@@ -81,10 +82,10 @@ import           Control.Monad.Writer
 import           Control.Monad.Except
 
 
-type Tries x s e e' = ( RUPTrie T.Text x
-                      , RUPTrie T.Text x
-                      , RUPTrie T.Text s
-                      , RUPTrie T.Text e
+type Tries x s e e' = ( RootedPredTrie T.Text x
+                      , RootedPredTrie T.Text x
+                      , RootedPredTrie T.Text s
+                      , RootedPredTrie T.Text e
                       )
 
 newtype HandlerT x sec err errSym m a = HandlerT
@@ -113,16 +114,16 @@ handle :: ( Monad m
           , ExpectArity cleanxs childErr
           , Singleton (UrlChunks xs)
               childContent
-              (RUPTrie T.Text resultContent)
+              (RootedPredTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childContent)
-              (RUPTrie T.Text resultContent)
+              (RootedPredTrie T.Text childContent)
+              (RootedPredTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childSec)
-              (RUPTrie T.Text resultSec)
+              (RootedPredTrie T.Text childSec)
+              (RootedPredTrie T.Text resultSec)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childErr)
-              (RUPTrie T.Text resultErr)
+              (RootedPredTrie T.Text childErr)
+              (RootedPredTrie T.Text resultErr)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
           , (ArityMinusTypeList childSec cleanxs) ~ resultSec
           , (ArityMinusTypeList childErr cleanxs) ~ resultErr
@@ -135,8 +136,8 @@ handle :: ( Monad m
             ->        HandlerT resultContent resultSec resultErr e m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
-  (Rooted _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell ( extrude ts $ Rooted mvl trieContent
+  (RootedPredTrie _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
+  tell ( extrude ts $ RootedPredTrie mvl trieContent
        , extrude ts trieNotFound
        , extrude ts trieSec
        , extrude ts trieErr
@@ -148,16 +149,16 @@ parent :: ( Monad m
           , cleanxs ~ CatMaybes xs
           , Singleton (UrlChunks xs)
               childContent
-              (RUPTrie T.Text resultContent)
+              (RootedPredTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childContent)
-              (RUPTrie T.Text resultContent)
+              (RootedPredTrie T.Text childContent)
+              (RootedPredTrie T.Text resultContent)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childErr)
-              (RUPTrie T.Text resultErr)
+              (RootedPredTrie T.Text childErr)
+              (RootedPredTrie T.Text resultErr)
           , Extrude (UrlChunks xs)
-              (RUPTrie T.Text childSec)
-              (RUPTrie T.Text resultSec)
+              (RootedPredTrie T.Text childSec)
+              (RootedPredTrie T.Text resultSec)
           , (ArityMinusTypeList childContent cleanxs) ~ resultContent
           , (ArityMinusTypeList childSec cleanxs) ~ resultSec
           , (ArityMinusTypeList childErr cleanxs) ~ resultErr
@@ -176,18 +177,17 @@ parent ts cs = do
        )
 
 
+-- | Sets the security role and error handler for a scope of routes.
 auth :: ( Monad m
         , Functor m
         ) => sec
           -> err
           -> HandlerT content sec err e m ()
-          -> HandlerT content sec err e m ()
-auth s handleFail cs = do
-  (rtrie,nftrie,Rooted _ trieSec,Rooted _ trieErr) <- lift $ execHandlerT cs
-  tell ( rtrie
-       , nftrie
-       , Rooted (Just s) trieSec
-       , Rooted (Just handleFail) trieErr
+auth s handleFail cs =
+  tell ( mempty
+       , mempty
+       , RootedPredTrie (Just s) mempty
+       , RootedPredTrie (Just handleFail) mempty
        )
 
 
@@ -201,16 +201,16 @@ notFound :: ( Monad m
             , ExpectArity cleanxs childErr
             , Singleton (UrlChunks xs)
                 childContent
-                (RUPTrie T.Text resultContent)
+                (RootedPredTrie T.Text resultContent)
             , Extrude (UrlChunks xs)
-                (RUPTrie T.Text childContent)
-                (RUPTrie T.Text resultContent)
+                (RootedPredTrie T.Text childContent)
+                (RootedPredTrie T.Text resultContent)
             , Extrude (UrlChunks xs)
-                (RUPTrie T.Text childSec)
-                (RUPTrie T.Text resultSec)
+                (RootedPredTrie T.Text childSec)
+                (RootedPredTrie T.Text resultSec)
             , Extrude (UrlChunks xs)
-                (RUPTrie T.Text childErr)
-                (RUPTrie T.Text resultErr)
+                (RootedPredTrie T.Text childErr)
+                (RootedPredTrie T.Text resultErr)
             , (ArityMinusTypeList childContent cleanxs) ~ resultContent
             , (ArityMinusTypeList childSec cleanxs) ~ resultSec
             , (ArityMinusTypeList childErr cleanxs) ~ resultErr
@@ -223,9 +223,9 @@ notFound :: ( Monad m
               ->        HandlerT resultContent resultSec resultErr e m ()
 notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
-  (trieContent,Rooted _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
+  (trieContent,RootedPredTrie _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
   tell ( extrude ts trieContent
-       , extrude ts $ Rooted mvl trieNotFound
+       , extrude ts $ RootedPredTrie mvl trieNotFound
        , extrude ts trieSec
        , extrude ts trieErr
        )
@@ -270,7 +270,7 @@ extractContent :: ( Functor m
                     -> Application' m
 extractContent h req respond = do
   (rtrie, nftrie,_,_) <- execHandlerT h
-  let mNotFound = P.lookupNearestParent (pathInfo req) nftrie
+  let mNotFound = (\(_,x,_) -> x) <$> PT.matchRPT (pathInfo req) nftrie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
 
@@ -281,11 +281,11 @@ extractContent h req respond = do
     failResp <- lift $ actionToResponse acceptBS fe v mNotFound plain404 req
 
     -- only runs `trimFileExt` when last lookup cell is a Literal
-    return $ case P.lookupWithL trimFileExt (pathInfo req) rtrie of
+    return $ case TC.lookupWithL trimFileExt (pathInfo req) rtrie of
       Nothing -> fromMaybe (liftIO $ respond failResp) $ do
         guard $ not $ null $ pathInfo req
         guard $ trimFileExt (last $ pathInfo req) == "index"
-        foundM <- P.lookup (init $ pathInfo req) rtrie
+        foundM <- TC.lookup (init $ pathInfo req) rtrie
         return $ lookupResponse acceptBS fe v foundM failResp req respond
       Just foundM -> lookupResponse acceptBS fe v foundM failResp req respond
 
@@ -299,7 +299,7 @@ extractAuthSym :: ( Functor m
                     -> m [sec]
 extractAuthSym hs req = do
   (_,_,trie,_) <- execHandlerT hs
-  return $ P.lookupThrough (pathInfo req) trie
+  return $ (\(_,x,_) -> x) <$> PT.matchesRPT (pathInfo req) trie
 
 
 type Middleware' m = Application' m -> Application' m
@@ -312,7 +312,7 @@ extractAuthResp :: ( Functor m
                      -> Application' m
 extractAuthResp e hs req respond = do
   (_,_,_,trie) <- execHandlerT hs
-  let mAction = P.lookupNearestParent (pathInfo req) trie <$~> e
+  let mAction = ((\(_,x,_) -> x) <$> PT.matchRPT (pathInfo req) trie) <$~> e
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
   basicResp <- actionToResponse acceptBS Html GET mAction plain401 req
@@ -333,13 +333,13 @@ extractNotFoundResp = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t
 extractNearestVia :: ( Functor m
                      , Monad m
                      , MonadIO m
-                     ) => (HandlerT (ActionT m ()) sec err e m a -> m (RUPTrie T.Text (ActionT m ())))
+                     ) => (HandlerT (ActionT m ()) sec err e m a -> m (RootedPredTrie T.Text (ActionT m ())))
                        -> Response -- ^ Default
                        -> HandlerT (ActionT m ()) sec err e m a
                        -> Application' m
 extractNearestVia extr def hs req respond = do
   trie <- extr hs
-  let mAction = P.lookupNearestParent (pathInfo req) trie
+  let mAction = (\(_,x,_) -> x) <$> PT.matchRPT (pathInfo req) trie
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
   basicResp <- actionToResponse acceptBS Html GET mAction def req

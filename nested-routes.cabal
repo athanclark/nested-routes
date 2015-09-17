@@ -148,6 +148,7 @@ Library
                       , attoparsec
                       , regex-compat
                       , pred-trie >= 0.3
+                      , tries
                       , poly-arity >= 0.0.6
                       , sets >= 0.0.5
                       , errors
