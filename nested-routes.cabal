@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                5.0.7
+Version:                5.1.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -147,7 +147,7 @@ Library
                       , bytestring
                       , attoparsec
                       , regex-compat
-                      , pred-trie >= 0.2.4.3
+                      , pred-trie >= 0.3
                       , poly-arity >= 0.0.6
                       , sets >= 0.0.5
                       , errors
@@ -189,81 +189,81 @@ Test-Suite spec
                       , errors
 
 
-Executable example
-  Default-Language:     Haskell2010
-  HS-Source-Dirs:       src
-                      , examples
-  GHC-Options:          -Wall
-  Main-Is:              Main.hs
-  Build-Depends:        base
-                      , wai
-                      , wai-extra
-                      , wai-util
-                      , warp
-                      , http-types
-                      , http-media
-                      , mtl
-                      , transformers
-                      , witherable
-                      , composition
-                      , composition-extra
-                      , semigroups
-                      , constraints
-                      , containers
-                      , text
-                      , aeson
-                      , blaze-html
-                      , lucid
-                      , shakespeare
-                      , clay
-                      , bytestring
-                      , attoparsec
-                      , regex-compat
-                      , pred-trie
-                      , poly-arity
-                      , sets
-                      , errors
+-- Executable example
+--   Default-Language:     Haskell2010
+--   HS-Source-Dirs:       src
+--                       , examples
+--   GHC-Options:          -Wall
+--   Main-Is:              Main.hs
+--   Build-Depends:        base
+--                       , wai
+--                       , wai-extra
+--                       , wai-util
+--                       , warp
+--                       , http-types
+--                       , http-media
+--                       , mtl
+--                       , transformers
+--                       , witherable
+--                       , composition
+--                       , composition-extra
+--                       , semigroups
+--                       , constraints
+--                       , containers
+--                       , text
+--                       , aeson
+--                       , blaze-html
+--                       , lucid
+--                       , shakespeare
+--                       , clay
+--                       , bytestring
+--                       , attoparsec
+--                       , regex-compat
+--                       , pred-trie
+--                       , poly-arity
+--                       , sets
+--                       , errors
 
-Executable example-stm
-  Default-Language:     Haskell2010
-  HS-Source-Dirs:       src
-                      , examples
-  GHC-Options:          -Wall
-  Main-Is:              STM.hs
-  Build-Depends:        base
-                      , wai
-                      , wai-extra
-                      , wai-session
-                      , cookie
-                      , wai-util
-                      , warp
-                      , http-types
-                      , http-media
-                      , mtl
-                      , transformers
-                      , witherable
-                      , composition
-                      , composition-extra
-                      , semigroups
-                      , constraints
-                      , containers
-                      , text
-                      , aeson
-                      , blaze-html
-                      , lucid
-                      , shakespeare
-                      , clay
-                      , bytestring
-                      , attoparsec
-                      , regex-compat
-                      , pred-trie
-                      , poly-arity
-                      , sets
-                      , errors
-                      , vcache
-                      , cryptonite
-                      , memory
-                      , time
+-- Executable example-stm
+--   Default-Language:     Haskell2010
+--   HS-Source-Dirs:       src
+--                       , examples
+--   GHC-Options:          -Wall
+--   Main-Is:              STM.hs
+--   Build-Depends:        base
+--                       , wai
+--                       , wai-extra
+--                       , wai-session
+--                       , cookie
+--                       , wai-util
+--                       , warp
+--                       , http-types
+--                       , http-media
+--                       , mtl
+--                       , transformers
+--                       , witherable
+--                       , composition
+--                       , composition-extra
+--                       , semigroups
+--                       , constraints
+--                       , containers
+--                       , text
+--                       , aeson
+--                       , blaze-html
+--                       , lucid
+--                       , shakespeare
+--                       , clay
+--                       , bytestring
+--                       , attoparsec
+--                       , regex-compat
+--                       , pred-trie
+--                       , poly-arity
+--                       , sets
+--                       , errors
+--                       , vcache
+--                       , cryptonite
+--                       , memory
+--                       , time
 
 
 Source-Repository head

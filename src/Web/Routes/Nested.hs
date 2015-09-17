@@ -55,8 +55,8 @@ import           Network.HTTP.Types
 import           Network.HTTP.Media
 import           Network.Wai
 
-import           Data.Trie.Pred.Unified
-import qualified Data.Trie.Pred.Unified            as P
+import           Data.Trie.Pred.Unified (RUPTrie (..))
+import qualified Data.Trie.Pred.Unified            as P -- only using lookups
 import qualified Data.Text                         as T
 import qualified Data.Map                          as Map
 import qualified Data.ByteString                   as B
@@ -302,15 +302,17 @@ extractAuthSym hs req = do
   return $ P.lookupThrough (pathInfo req) trie
 
 
+type Middleware' m = Application' m -> Application' m
+
 extractAuthResp :: ( Functor m
                    , Monad m
                    , MonadIO m
-                   ) => e
+                   ) => e -- TODO: Mirror `routeAuth`
                      -> HandlerT x sec (e -> ActionT m ()) e m a
                      -> Application' m
 extractAuthResp e hs req respond = do
   (_,_,_,trie) <- execHandlerT hs
-  let mAction = P.lookupNearestParent (pathInfo req) trie <~$> e
+  let mAction = P.lookupNearestParent (pathInfo req) trie <$~> e
       acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
   basicResp <- actionToResponse acceptBS Html GET mAction plain401 req
