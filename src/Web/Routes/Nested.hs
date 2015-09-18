@@ -56,8 +56,8 @@ import           Network.HTTP.Types
 import           Network.HTTP.Media
 import           Network.Wai
 
-import           Data.Trie.Pred.Types (RootedPredTrie (..), PredTrie (..))
-import qualified Data.Trie.Pred.Types              as PT -- only using lookups
+import           Data.Trie.Pred (RootedPredTrie (..), PredTrie (..))
+import qualified Data.Trie.Pred                    as PT -- only using lookups
 import           Data.Trie.Pred.Step (PredSteps (..), PredStep (..))
 import qualified Data.Trie.Class                   as TC
 import qualified Data.Text                         as T

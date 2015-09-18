@@ -29,7 +29,7 @@ import           Text.Regex
 import           Web.Routes.Nested.Types.UrlChunks
 import qualified Data.Text as T
 import           Data.List.NonEmpty
-import           Data.Trie.Pred.Types
+import           Data.Trie.Pred
 import           Data.Trie.Pred.Step
 import qualified Data.Trie.Map as MT
 import qualified Data.Map as Map
