@@ -64,6 +64,10 @@ newtype VerbListenerT r m a =
              , MonadIO
              )
 
+execVerbListenerT :: Monad m => VerbListenerT r m a -> m (Verbs m r)
+execVerbListenerT verbs = do uVerbs <- execWriterT $ runVerbListenerT verbs
+                             return $ unUnion uVerbs
+
 instance MonadTrans (VerbListenerT r) where
   lift ma = VerbListenerT $ lift ma
 

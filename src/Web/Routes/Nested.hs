@@ -31,14 +31,14 @@ module Web.Routes.Nested
   , extractContent
   , extractNotFound
   , extractAuthSym
-  , extractAuthResp
+  , extractAuth
   , extractNearestVia
   -- * Utilities
-  , actionToResponse
+  , actionToMiddleware
+  , lookupVerb
+  , lookupFileExt
   , lookupResponse
   , handleUpload
-  , plain404
-  , lookupProper
   -- ** File Extensions
   , possibleFileExts
   , trimFileExt
@@ -249,29 +249,23 @@ route :: ( Functor m
          , Monad m
          , MonadIO m
          ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
-           -> Application' m
+           -> Middleware' m
 route = extractContent
 
 
 -- | Given a security verification function, and a security updating function,
--- turn a set of routes into a final application, where content is secured before
--- being breached.
+-- turn a set of routes into a middleware, where a session is secured before
+-- responding.
 routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
-             ) => (Request -> [sec] -> ExceptT e m checksum) -- ^ create
-               -> (checksum -> m (Response -> Response))     -- ^ set
+             ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
                -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
-               -> Application' m
-routeAuth makeAuth putAuth hs req respond = do
-  ss <- extractAuthSym hs req
-  eNewData <- runExceptT $ makeAuth req ss
-  case eNewData of
-    Left  e       -> extractAuthResp e hs req respond
-    Right newData -> do
-      f <- putAuth newData
-      extractContent hs req $ respond . f
-
+               -> Middleware' m
+routeAuth authorize hs =
+  let auth = extractAuth authorize hs
+      content = extractContent hs
+  in content . auth
 
 -- | Compress the content tries (normal and not-found responses) into a final
 -- application.
@@ -279,29 +273,20 @@ extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
                   ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
-                    -> Application' m
-extractContent h req respond = do
-  (rtrie, nftrie,_,_) <- execHandlerT h
-  let mNotFound = getResultsFromMatch <$> PT.matchRPT (pathInfo req) nftrie
-      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+                    -> Middleware' m
+extractContent hs app req respond = do
+  (rtrie,_,_,_) <- execHandlerT hs
+  let mAcceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
-
-  notFoundBasic <- actionToResponse acceptBS Html GET mNotFound plain404 req
-
-  mResp <- runMaybeT $ do
-    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    failResp <- lift $ actionToResponse acceptBS fe v mNotFound plain404 req
-
-    -- only runs `trimFileExt` when last lookup cell is a Literal
-    return $ case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
-      Nothing -> fromMaybe (liftIO $ respond failResp) $ do
-        guard $ not $ null $ pathInfo req
-        guard $ trimFileExt (last $ pathInfo req) == "index"
-        foundM <- TC.lookup (init $ pathInfo req) rtrie
-        return $ lookupResponse acceptBS fe v foundM failResp req respond
-      Just foundM -> lookupResponse acceptBS fe v foundM failResp req respond
-
-  fromMaybe (liftIO $ respond notFoundBasic) mResp
+      v = getVerb req
+      content = case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
+        Nothing -> fromMaybe app $ do
+          guard $ not $ null $ pathInfo req
+          guard $ trimFileExt (last $ pathInfo req) == "index"
+          found <- TC.lookup (init $ pathInfo req) rtrie
+          Just $ actionToMiddleware mAcceptBS fe v found app
+        Just found -> actionToMiddleware mAcceptBS fe v found app
+  extractNotFound hs content req respond
 
 
 -- | Manually fetch the security tokens / authorization roles affiliated with
@@ -316,146 +301,113 @@ extractAuthSym hs req = do
   return $ getResultsFromMatch <$> PT.matchesRPT (pathInfo req) trie
 
 
-extractAuthResp :: ( Functor m
+extractAuth :: ( Functor m
                    , Monad m
                    , MonadIO m
-                   ) => e -- TODO: Mirror `routeAuth`
+                   ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
                      -> HandlerT x sec (e -> ActionT m ()) e m a
-                     -> Application' m
-extractAuthResp e hs req respond = do
+                     -> Middleware' m
+extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
-  let mAction = (getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie) <$~> e
-      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+  ss <- extractAuthSym hs req
+  ef <- runExceptT $ authorize req ss
+  let acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
-  basicResp <- actionToResponse acceptBS Html GET mAction plain401 req
-  mResp <- runMaybeT $ do
-    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    lift $ actionToResponse acceptBS fe v mAction plain401 req
-  liftIO $ respond $ fromMaybe basicResp mResp
-
+      v = getVerb req
+  either (\e -> maybe (app req respond)
+                      (\action -> actionToMiddleware acceptBS fe v action app req respond)
+                    $ (getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie) <$~> e)
+         (\f -> app req (respond . f))
+         ef
 
 -- | Turns the not-found trie into a final application, matching all routes under
--- each @notFound@ node.
+-- each @notFound@ node. If there is no nearest parent (querying above the head
+-- of the tree), control is passed down the middlware chain.
 extractNotFound :: ( Functor m
                    , Monad m
                    , MonadIO m
                    ) => HandlerT (ActionT m ()) sec err e m a
-                     -> Application' m
-extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t) plain404
+                     -> Middleware' m
+extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
 
 
+-- | Only return content, do not handle uploads. Also, the extraction should be
+-- flat, in that the values contained in our trie are only @ActionT@, without arity.
 extractNearestVia :: ( Functor m
                      , Monad m
                      , MonadIO m
                      ) => (HandlerT (ActionT m ()) sec err e m a -> m (RootedPredTrie T.Text (ActionT m ())))
-                       -> Response -- ^ Default
                        -> HandlerT (ActionT m ()) sec err e m a
-                       -> Application' m
-extractNearestVia extr def hs req respond = do
+                       -> Middleware' m
+extractNearestVia extr hs app req respond = do
   trie <- extr hs
-  let mAction = getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
-      acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+  let acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
-  basicResp <- actionToResponse acceptBS Html GET mAction def req
-  mResp <- runMaybeT $ do
-    v <- hoistMaybe $ httpMethodToMSym $ requestMethod req
-    lift $ actionToResponse acceptBS fe v mAction def req
-  liftIO $ respond $ fromMaybe basicResp mResp
+      v = getVerb req
+  maybe (app req respond)
+        (\action -> actionToMiddleware acceptBS fe v action app req respond)
+      $ getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
 
 
--- | Consumes the @Verb@ parameter, and delegates the rest of the task to
-actionToResponse :: MonadIO m =>
-                    Maybe AcceptHeader
-                 -> FileExt
-                 -> Verb
-                 -> Maybe (ActionT m ()) -- ^ Potential results to lookup
-                 -> Response -- ^ Default Response
-                 -> Request
-                 -> m Response
-actionToResponse mAcceptBS f v mAction def req = do
-  mx <- runMaybeT $ do
-    action <- hoistMaybe mAction
-    vmap <- lift $ execWriterT $ runVerbListenerT action
-    (_,fexts) <- hoistMaybe $ Map.lookup v $ supplyReq req $ unVerbs $ unUnion vmap
-    femap <- lift $ execWriterT $ runFileExtListenerT fexts
-    hoistMaybe $ lookupProper mAcceptBS f $ unFileExts femap
-  return $ fromMaybe def mx
-
--- actionToVMap :: MonadIO m =>
---              -> ActionT m () -- ^ Potential results to lookup
---              -> m (Verbs m r)
---                 Maybe AcceptHeader
---              -> Verb
---              -> Response -- ^ Default Response
---              -> Request
---              -> m Response
-actionToFEMap action = lift $ execWriterT $ runVerbListenerT action
-
-
--- | Turn an @ActionT@ into an @Application@ by providing a @FileExt@ and @Verb@
--- to lookup.
-lookupResponse :: MonadIO m =>
-                  Maybe AcceptHeader -- @Accept@ header
-               -> FileExt
-               -> Verb
-               -> ActionT m ()
-               -> Response -- @404@ response
-               -> Application' m
-lookupResponse acceptBS f v foundM failResp req respond = do
-  vmapLit <- execWriterT $ runVerbListenerT foundM
-  continue $ supplyReq req $ unVerbs $ unUnion vmapLit
-  where
-    continue :: MonadIO m =>
-                Map.Map Verb ( HandleUpload m
-                             , FileExtListenerT Response m ()
-                             )
-             -> m ResponseReceived
-    continue vmap = do
-      mResp <- runMaybeT $ do
-        (mreqbodyf, femonad) <- hoistMaybe $ Map.lookup v vmap
-        femap <- lift $ execWriterT $ runFileExtListenerT femonad
-        r <- hoistMaybe $ lookupProper acceptBS f $ unFileExts femap
-        case mreqbodyf of
-          Nothing              -> return $ liftIO $ respond r
-          Just (reqbf,Nothing) -> return $ handleUpload r reqbf req respond
-          Just (reqbf,Just bl) -> case requestBodyLength req of
-            KnownLength bl' | bl' <= bl -> return $ handleUpload r reqbf req respond
-            _                           -> mzero
-      fromMaybe (liftIO $ respond failResp) mResp
-
-
--- | Terminate the request/response cycle by first handling request body data
--- before responding.
-handleUpload :: ( Monad m
-                , MonadIO m
-                , Functor m
-                ) => Response -- ^ Response to send
-                  -> (BL.ByteString -> m ()) -- ^ Handle the upload content
-                  -> Application' m
-handleUpload r' reqbf req' respond' = do
-  body <- liftIO $ strictRequestBody req'
-  _    <- reqbf body
-  liftIO $ respond' r'
-
--- | Default @404@ response
-plain404 :: Response
-plain404 = responseLBS status404 [("Content-Type","text/plain")] "404"
-
--- | Default @401@ response
-plain401 :: Response
-plain401 = responseLBS status401 [("Content-Type","text/plain")] "401"
+lookupVerb :: Verb -> Request -> Verbs m r -> Maybe (HandleUpload m, r)
+lookupVerb v req vmap = Map.lookup v $ supplyReq req $ unVerbs vmap
 
 
 -- | Given a possible @Accept@ header and file extension key, lookup the contents
 -- of a map.
-lookupProper :: Maybe AcceptHeader -> FileExt -> Map.Map FileExt a -> Maybe a
-lookupProper maccept k xs =
+lookupFileExt :: Maybe AcceptHeader -> FileExt -> FileExts a -> Maybe a
+lookupFileExt mAccept k (FileExts xs) =
   let attempts = maybe [Html,Text,Json,JavaScript,Css]
-                   (possibleFileExts k) maccept
+                   (possibleFileExts k) mAccept
   in foldr (go xs) Nothing attempts
   where
     go xs' x Nothing = Map.lookup x xs'
     go _ _ (Just y) = Just y
+
+
+-- | Turn an @ActionT@ into a @Middleware@ by providing a @FileExt@ and @Verb@
+-- to lookup, returning the response and utilizing the upload handler encoded
+-- in the action.
+actionToMiddleware :: MonadIO m =>
+                      Maybe AcceptHeader -- @Accept@ header
+                   -> FileExt
+                   -> Verb
+                   -> ActionT m ()
+                   -> Middleware' m
+actionToMiddleware mAcceptBS f v found app req respond = do
+  mResponse <- lookupResponse mAcceptBS f v req found
+  maybe (app req respond) go mResponse
+  where go (mreqbodyf,r) = do handleUpload mreqbodyf req
+                              liftIO $ respond r
+
+
+lookupResponse :: MonadIO m =>
+                          Maybe AcceptHeader
+                       -> FileExt
+                       -> Verb
+                       -> Request
+                       -> ActionT m ()
+                       -> m (Maybe (HandleUpload m, Response))
+lookupResponse mAcceptBS f v req action = runMaybeT $ do
+  vmap <- lift $ execVerbListenerT action
+  (mreqbodyf,fexts) <- hoistMaybe $ lookupVerb v req vmap
+  femap <- lift $ execFileExtListenerT fexts
+  r <- hoistMaybe $ lookupFileExt mAcceptBS f femap
+  return (mreqbodyf, r)
+
+
+handleUpload :: MonadIO m =>
+                     HandleUpload m
+                  -> Request
+                  -> m ()
+handleUpload mreqbodyf req = case mreqbodyf of
+  Nothing              -> return ()
+  Just (reqbf,Nothing) -> go reqbf
+  Just (reqbf,Just bl) -> case requestBodyLength req of
+    KnownLength bl' | bl' <= bl -> go reqbf
+    _                           -> return ()
+  where go reqbf = reqbf =<< liftIO (strictRequestBody req)
+
 
 
 -- | Takes a subject file extension and an @Accept@ header, and returns the other
@@ -505,6 +457,9 @@ getFileExt :: Request -> FileExt
 getFileExt req = fromMaybe Html $ case pathInfo req of
   [] -> Just Html -- TODO: Override default file extension for `/foo/bar`
   xs -> toExt $ T.dropWhile (/= '.') $ last xs
+
+getVerb :: Request -> Verb
+getVerb req = fromMaybe GET $ httpMethodToMSym $ requestMethod req
 
 
 -- | Turns a @ByteString@ into a @StdMethod@.

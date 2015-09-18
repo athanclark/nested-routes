@@ -48,3 +48,6 @@ newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
 newtype FileExtListenerT r m a =
   FileExtListenerT { runFileExtListenerT :: WriterT (FileExts r) m a }
     deriving (Functor, Applicative, Monad, MonadIO, MonadTrans)
+
+execFileExtListenerT :: Monad m => FileExtListenerT r m a -> m (FileExts r)
+execFileExtListenerT = execWriterT . runFileExtListenerT
