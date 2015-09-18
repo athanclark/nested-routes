@@ -7,4 +7,5 @@ extra-deps:
   - wai-util-0.8
   - commutative-0.0.1.4
   - http-accept-0.2
+  - composition-extra-2.0.0
 resolver: nightly-2015-09-10
