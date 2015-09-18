@@ -18,8 +18,8 @@ module Web.Routes.Nested
   , Tries
   , HandlerT (..)
   , ActionT
-  , Application'
-  , Middleware'
+  , ApplicationT
+  , MiddlewareT
   -- * Combinators
   , handle
   , parent
@@ -235,8 +235,8 @@ notFound _ Nothing Nothing = return ()
 
 
 
-type Application' m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
-type Middleware' m = Application' m -> Application' m
+type ApplicationT m = Request -> (Response -> IO ResponseReceived) -> m ResponseReceived
+type MiddlewareT m = ApplicationT m -> ApplicationT m
 
 type AcceptHeader = B.ByteString
 
@@ -246,11 +246,11 @@ route :: ( Functor m
          , Monad m
          , MonadIO m
          ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
-           -> Middleware' m
+           -> MiddlewareT m
 route = extractContent
 
 
--- | Given a security verification function, and a security updating function,
+-- | Given a security verification function which returns an updating function,
 -- turn a set of routes into a middleware, where a session is secured before
 -- responding.
 routeAuth :: ( Functor m
@@ -258,7 +258,7 @@ routeAuth :: ( Functor m
              , MonadIO m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
                -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
-               -> Middleware' m
+               -> MiddlewareT m
 routeAuth authorize hs = extractContent hs . extractAuth authorize hs
 
 -- | Compress the content tries (normal and not-found responses) into a final
@@ -267,7 +267,7 @@ extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
                   ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
-                    -> Middleware' m
+                    -> MiddlewareT m
 extractContent hs app req respond = do
   (rtrie,_,_,_) <- execHandlerT hs
   let mAcceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
@@ -300,7 +300,7 @@ extractAuth :: ( Functor m
                    , MonadIO m
                    ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
                      -> HandlerT x sec (e -> ActionT m ()) e m a
-                     -> Middleware' m
+                     -> MiddlewareT m
 extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
   ss <- extractAuthSym hs req
@@ -321,7 +321,7 @@ extractNotFound :: ( Functor m
                    , Monad m
                    , MonadIO m
                    ) => HandlerT (ActionT m ()) sec err e m a
-                     -> Middleware' m
+                     -> MiddlewareT m
 extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
 
 
@@ -332,7 +332,7 @@ extractNearestVia :: ( Functor m
                      , MonadIO m
                      ) => (HandlerT (ActionT m ()) sec err e m a -> m (RootedPredTrie T.Text (ActionT m ())))
                        -> HandlerT (ActionT m ()) sec err e m a
-                       -> Middleware' m
+                       -> MiddlewareT m
 extractNearestVia extr hs app req respond = do
   trie <- extr hs
   let acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
@@ -367,7 +367,7 @@ actionToMiddleware :: MonadIO m =>
                    -> FileExt
                    -> Verb
                    -> ActionT m ()
-                   -> Middleware' m
+                   -> MiddlewareT m
 actionToMiddleware mAcceptBS f v found app req respond = do
   mResponse <- lookupResponse mAcceptBS f v req found
   maybe (app req respond) go mResponse
