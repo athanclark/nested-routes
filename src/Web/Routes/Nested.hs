@@ -67,10 +67,10 @@ import qualified Data.ByteString                   as B
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty                as NE
 import           Data.Maybe                        (fromMaybe)
-import           Data.Witherable
+import           Data.Witherable hiding (filter)
 import           Data.Functor.Syntax
 import           Data.Function.Poly
-import           Data.List
+import           Data.List hiding (filter)
 
 import           Control.Error.Util
 import           Control.Applicative
@@ -247,7 +247,7 @@ route :: ( Functor m
          , MonadIO m
          ) => HandlerT (ActionT m ()) sec err e m a -- ^ Assembled @handle@ calls
            -> MiddlewareT m
-route = extractContent
+route hs = extractContent hs . extractNotFound hs
 
 
 -- | Given a security verification function which returns an updating function,
@@ -259,10 +259,9 @@ routeAuth :: ( Functor m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
                -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
                -> MiddlewareT m
-routeAuth authorize hs = extractContent hs . extractAuth authorize hs
+routeAuth authorize hs = extractAuth authorize hs . route hs
 
--- | Compress the content tries (normal and not-found responses) into a final
--- application.
+-- | Turn the trie carrying the main content into a middleware.
 extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
@@ -273,14 +272,13 @@ extractContent hs app req respond = do
   let mAcceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
       fe = getFileExt req
       v = getVerb req
-      content = case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
-        Nothing -> fromMaybe app $ do
-          guard $ not $ null $ pathInfo req
-          guard $ trimFileExt (last $ pathInfo req) == "index"
-          found <- TC.lookup (init $ pathInfo req) rtrie
-          Just $ actionToMiddleware mAcceptBS fe v found app
-        Just found -> actionToMiddleware mAcceptBS fe v found app
-  extractNotFound hs content req respond
+  case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
+    Nothing -> fromMaybe (app req respond) $ do
+      guard $ not $ null $ pathInfo req
+      guard $ trimFileExt (last $ pathInfo req) == "index"
+      found <- TC.lookup (init $ pathInfo req) rtrie
+      Just $ actionToMiddleware mAcceptBS fe v found app req respond
+    Just found -> actionToMiddleware mAcceptBS fe v found app req respond
 
 
 -- | Manually fetch the security tokens / authorization roles affiliated with
@@ -292,7 +290,8 @@ extractAuthSym :: ( Functor m
                     -> m [sec]
 extractAuthSym hs req = do
   (_,_,trie,_) <- execHandlerT hs
-  return $ getResultsFromMatch <$> PT.matchesRPT (pathInfo req) trie
+  return $ getResultsFromMatch <$> -- the tokens /breached/, not reached.
+    filter (\(_,_,x) -> not $ null x) (PT.matchesRPT (pathInfo req) trie)
 
 
 extractAuth :: ( Functor m
@@ -343,21 +342,6 @@ extractNearestVia extr hs app req respond = do
       $ getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
 
 
-lookupVerb :: Verb -> Request -> Verbs m r -> Maybe (HandleUpload m, r)
-lookupVerb v req vmap = Map.lookup v $ supplyReq req $ unVerbs vmap
-
-
--- | Given a possible @Accept@ header and file extension key, lookup the contents
--- of a map.
-lookupFileExt :: Maybe AcceptHeader -> FileExt -> FileExts a -> Maybe a
-lookupFileExt mAccept k (FileExts xs) =
-  let attempts = maybe [Html,Text,Json,JavaScript,Css]
-                   (possibleFileExts k) mAccept
-  in foldr (go xs) Nothing attempts
-  where
-    go xs' x Nothing = Map.lookup x xs'
-    go _ _ (Just y) = Just y
-
 
 -- | Turn an @ActionT@ into a @Middleware@ by providing a @FileExt@ and @Verb@
 -- to lookup, returning the response and utilizing the upload handler encoded
@@ -402,6 +386,19 @@ handleUpload mreqbodyf req = case mreqbodyf of
     _                           -> return ()
   where go reqbf = reqbf =<< liftIO (strictRequestBody req)
 
+
+
+lookupVerb :: Verb -> Request -> Verbs m r -> Maybe (HandleUpload m, r)
+lookupVerb v req vmap = Map.lookup v $ supplyReq req $ unVerbs vmap
+
+
+-- | Given a possible @Accept@ header and file extension key, lookup the contents
+-- of a map.
+lookupFileExt :: Maybe AcceptHeader -> FileExt -> FileExts a -> Maybe a
+lookupFileExt mAccept k (FileExts xs) =
+  let attempts = maybe [Html,Text,Json,JavaScript,Css]
+                   (possibleFileExts k) mAccept
+  in getFirst $ foldMap (First . flip Map.lookup xs) attempts
 
 
 -- | Takes a subject file extension and an @Accept@ header, and returns the other
