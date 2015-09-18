@@ -134,7 +134,7 @@ Library
                       , transformers
                       , witherable
                       , composition
-                      , composition-extra
+                      , composition-extra >= 2.0.0
                       , semigroups
                       , constraints
                       , containers

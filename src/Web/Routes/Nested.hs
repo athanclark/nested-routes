@@ -19,6 +19,7 @@ module Web.Routes.Nested
   , HandlerT (..)
   , ActionT
   , Application'
+  , Middleware'
   -- * Combinators
   , handle
   , parent
@@ -63,7 +64,6 @@ import qualified Data.Text                         as T
 import qualified Data.Map                          as Map
 import           Data.Trie.Map (MapStep (..))
 import qualified Data.ByteString                   as B
-import qualified Data.ByteString.Lazy              as BL
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty                as NE
 import           Data.Maybe                        (fromMaybe)
@@ -71,10 +71,7 @@ import           Data.Witherable
 import           Data.Functor.Syntax
 import           Data.Function.Poly
 import           Data.List
-import           Data.Function.Poly
-import           Data.Set.Class                    as Sets hiding (singleton)
 
-import           Control.Arrow
 import           Control.Error.Util
 import           Control.Applicative
 import           Control.Monad
@@ -134,9 +131,9 @@ handle :: ( Monad m
           , childContent ~ TypeListToArity cleanxs resultContent
           , childSec ~ TypeListToArity cleanxs resultSec
           , childErr ~ TypeListToArity cleanxs resultErr
-          ) => UrlChunks xs -- ^ Path to match against
-            -> Maybe childContent -- ^ Possibly a function, ending in @ActionT z m ()@.
-            -> Maybe (HandlerT childContent  childSec  childErr  e m ()) -- ^ Potential child routes
+          ) => UrlChunks xs
+            -> Maybe childContent
+            -> Maybe (HandlerT childContent  childSec  childErr  e m ())
             ->        HandlerT resultContent resultSec resultErr e m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
@@ -262,10 +259,7 @@ routeAuth :: ( Functor m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
                -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
                -> Middleware' m
-routeAuth authorize hs =
-  let auth = extractAuth authorize hs
-      content = extractContent hs
-  in content . auth
+routeAuth authorize hs = extractContent hs . extractAuth authorize hs
 
 -- | Compress the content tries (normal and not-found responses) into a final
 -- application.
