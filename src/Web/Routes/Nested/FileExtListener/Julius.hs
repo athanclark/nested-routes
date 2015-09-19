@@ -22,17 +22,29 @@ import           Control.Monad.Writer
 julius :: Monad m => Javascript -> FileExtListenerT Response m ()
 julius = juliusStatusHeaders status200 [("Content-Type", "application/javascript")]
 
+juliusWith :: Monad m => (Response -> Response) -> Javascript -> FileExtListenerT Response m ()
+juliusWith f = juliusStatusHeadersWith f status200 [("Content-Type", "application/javascript")]
+
 juliusStatus :: Monad m => Status -> Javascript -> FileExtListenerT Response m ()
 juliusStatus s = juliusStatusHeaders s [("Content-Type", "application/javascript")]
+
+juliusStatusWith :: Monad m => (Response -> Response) -> Status -> Javascript -> FileExtListenerT Response m ()
+juliusStatusWith f s = juliusStatusHeadersWith f s [("Content-Type", "application/javascript")]
 
 juliusHeaders :: Monad m => RequestHeaders -> Javascript -> FileExtListenerT Response m ()
 juliusHeaders = juliusStatusHeaders status200
 
+juliusHeadersWith :: Monad m => (Response -> Response) -> RequestHeaders -> Javascript -> FileExtListenerT Response m ()
+juliusHeadersWith f = juliusStatusHeadersWith f status200
+
 juliusStatusHeaders :: Monad m => Status -> RequestHeaders -> Javascript -> FileExtListenerT Response m ()
-juliusStatusHeaders s hs i =
+juliusStatusHeaders = juliusStatusHeadersWith id
+
+juliusStatusHeadersWith :: Monad m => (Response -> Response) -> Status -> RequestHeaders -> Javascript -> FileExtListenerT Response m ()
+juliusStatusHeadersWith f s hs i =
   let r = juliusOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton JavaScript r
+    FileExts $ singleton JavaScript $ f r
 
 
 
@@ -48,8 +60,3 @@ juliusOnlyHeaders = juliusOnlyStatusHeaders status200
 
 juliusOnlyStatusHeaders :: Status -> RequestHeaders -> Javascript -> Response
 juliusOnlyStatusHeaders s hs i = bytestringOnlyStatus s hs $ LT.encodeUtf8 $ renderJavascript i
-
-
-
-
-

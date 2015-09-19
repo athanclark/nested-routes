@@ -23,17 +23,29 @@ import           Control.Monad.Writer
 clay :: Monad m => Config -> [App] -> Css -> FileExtListenerT Response m ()
 clay c as = clayStatusHeaders c as status200 [("Content-Type", "text/css")]
 
-clayStatus :: Monad m =>Config -> [App] ->  Status -> Css -> FileExtListenerT Response m ()
+clayWith :: Monad m => (Response -> Response) -> Config -> [App] -> Css -> FileExtListenerT Response m ()
+clayWith f c as = clayStatusHeadersWith f c as status200 [("Content-Type", "text/css")]
+
+clayStatus :: Monad m => Config -> [App] -> Status -> Css -> FileExtListenerT Response m ()
 clayStatus c as s = clayStatusHeaders c as s [("Content-Type", "text/css")]
+
+clayStatusWith :: Monad m => (Response -> Response) -> Config -> [App] -> Status -> Css -> FileExtListenerT Response m ()
+clayStatusWith f c as s = clayStatusHeadersWith f c as s [("Content-Type", "text/css")]
 
 clayHeaders :: Monad m => Config -> [App] -> RequestHeaders -> Css -> FileExtListenerT Response m ()
 clayHeaders c as = clayStatusHeaders c as status200
 
+clayHeadersWith :: Monad m => (Response -> Response) -> Config -> [App] -> RequestHeaders -> Css -> FileExtListenerT Response m ()
+clayHeadersWith f c as = clayStatusHeadersWith f c as status200
+
 clayStatusHeaders :: Monad m => Config -> [App] -> Status -> RequestHeaders -> Css -> FileExtListenerT Response m ()
-clayStatusHeaders c as s hs i =
+clayStatusHeaders = clayStatusHeadersWith id
+
+clayStatusHeadersWith :: Monad m => (Response -> Response) -> Config -> [App] -> Status -> RequestHeaders -> Css -> FileExtListenerT Response m ()
+clayStatusHeadersWith f c as s hs i =
   let r = clayOnlyStatusHeaders c as s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton Css r
+    FileExts $ singleton Css $ f r
 
 
 
@@ -49,8 +61,3 @@ clayOnlyHeaders c as = clayOnlyStatusHeaders c as status200
 
 clayOnlyStatusHeaders :: Config -> [App] -> Status -> RequestHeaders -> Css -> Response
 clayOnlyStatusHeaders c as s hs i = bytestringOnlyStatus s hs $ LT.encodeUtf8 $ renderWith c as i
-
-
-
-
-

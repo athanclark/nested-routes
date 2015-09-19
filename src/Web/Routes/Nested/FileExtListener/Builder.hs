@@ -19,11 +19,17 @@ import           Control.Monad.Writer
 builder :: Monad m => FileExt -> RequestHeaders -> BU.Builder -> FileExtListenerT Response m ()
 builder e  = builderStatus e status200
 
+builderWith :: Monad m => (Response -> Response) -> FileExt -> RequestHeaders -> BU.Builder -> FileExtListenerT Response m ()
+builderWith f e = builderStatusWith f e status200
+
 builderStatus :: Monad m => FileExt -> Status -> RequestHeaders -> BU.Builder -> FileExtListenerT Response m ()
-builderStatus e s hs i =
+builderStatus = builderStatusWith id
+
+builderStatusWith :: Monad m => (Response -> Response) -> FileExt -> Status -> RequestHeaders -> BU.Builder -> FileExtListenerT Response m ()
+builderStatusWith f e s hs i =
   let r = builderOnlyStatus s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton e r
+    FileExts $ singleton e $ f r
 
 
 

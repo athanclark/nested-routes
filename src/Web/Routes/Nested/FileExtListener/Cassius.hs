@@ -22,17 +22,29 @@ import           Control.Monad.Writer
 cassius :: Monad m => Css -> FileExtListenerT Response m ()
 cassius = cassiusStatusHeaders status200 [("Content-Type", "cassius/css")]
 
+cassiusWith :: Monad m => (Response -> Response) -> Css -> FileExtListenerT Response m ()
+cassiusWith f = cassiusStatusHeadersWith f status200 [("Content-Type", "cassius/css")]
+
 cassiusStatus :: Monad m => Status -> Css -> FileExtListenerT Response m ()
 cassiusStatus s = cassiusStatusHeaders s [("Content-Type", "cassius/css")]
+
+cassiusStatusWith :: Monad m => (Response -> Response) -> Status -> Css -> FileExtListenerT Response m ()
+cassiusStatusWith f s = cassiusStatusHeadersWith f s [("Content-Type", "cassius/css")]
 
 cassiusHeaders :: Monad m => RequestHeaders -> Css -> FileExtListenerT Response m ()
 cassiusHeaders = cassiusStatusHeaders status200
 
+cassiusHeadersWith :: Monad m => (Response -> Response) -> RequestHeaders -> Css -> FileExtListenerT Response m ()
+cassiusHeadersWith f = cassiusStatusHeadersWith f status200
+
 cassiusStatusHeaders :: Monad m => Status -> RequestHeaders -> Css -> FileExtListenerT Response m ()
-cassiusStatusHeaders s hs i =
+cassiusStatusHeaders = cassiusStatusHeadersWith id
+
+cassiusStatusHeadersWith :: Monad m => (Response -> Response) -> Status -> RequestHeaders -> Css -> FileExtListenerT Response m ()
+cassiusStatusHeadersWith f s hs i =
   let r = cassiusOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton Css r
+    FileExts $ singleton Css $ f r
 
 
 
@@ -48,8 +60,3 @@ cassiusOnlyHeaders = cassiusOnlyStatusHeaders status200
 
 cassiusOnlyStatusHeaders :: Status -> RequestHeaders -> Css -> Response
 cassiusOnlyStatusHeaders s hs i = bytestringOnlyStatus s hs $ LT.encodeUtf8 $ renderCss i
-
-
-
-
-

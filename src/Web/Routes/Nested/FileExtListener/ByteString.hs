@@ -19,6 +19,9 @@ import           Control.Monad.Writer
 bytestring :: Monad m => FileExt -> RequestHeaders -> B.ByteString -> FileExtListenerT Response m ()
 bytestring e = bytestringStatus e status200
 
+bytestringWith :: Monad m => (Response -> Response) -> FileExt -> RequestHeaders -> B.ByteString -> FileExtListenerT Response m ()
+bytestringWith f e = bytestringStatusWith f e status200
+
 bytestringStatus :: Monad m => FileExt -> Status -> RequestHeaders -> B.ByteString
                  -> FileExtListenerT Response m ()
 bytestringStatus = bytestringStatusWith id
@@ -31,6 +34,7 @@ bytestringStatusWith f e s hs i = do
   r <- lift $ U.bytestring s hs i
   FileExtListenerT $ tell $
     FileExts $ singleton e $ f r
+
 
 bytestringOnly :: RequestHeaders -> B.ByteString -> Response
 bytestringOnly = bytestringOnlyStatus status200

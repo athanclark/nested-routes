@@ -18,38 +18,68 @@ import           Control.Monad.Writer
 
 -- | Uses @Json@ as the key in the map, and @"application/json"@ as the content type.
 json :: ( A.ToJSON j
-        , Monad m ) =>
-        j -> FileExtListenerT Response m ()
+        , Monad m
+        ) => j -> FileExtListenerT Response m ()
 json = jsonStatusHeaders status200 [("Content-Type", "application/json")]
 
+jsonWith :: ( A.ToJSON j
+            , Monad m
+            ) => (Response -> Response) -> j -> FileExtListenerT Response m ()
+jsonWith f = jsonStatusHeadersWith f status200 [("Content-Type", "application/json")]
+
 jsonStatus :: ( A.ToJSON j
-        , Monad m ) =>
-        Status -> j -> FileExtListenerT Response m ()
+              , Monad m
+              ) => Status -> j -> FileExtListenerT Response m ()
 jsonStatus s = jsonStatusHeaders s [("Content-Type", "application/json")]
+
+jsonStatusWith :: ( A.ToJSON j
+                  , Monad m
+                  ) => (Response -> Response) -> Status -> j -> FileExtListenerT Response m ()
+jsonStatusWith f s = jsonStatusHeadersWith f s [("Content-Type", "application/json")]
 
 -- | Uses @Json@ as the key in the map, and @"application/javascript"@ as the content type.
 jsonp :: ( A.ToJSON j
-        , Monad m ) =>
-        j -> FileExtListenerT Response m ()
+         , Monad m
+         ) => j -> FileExtListenerT Response m ()
 jsonp = jsonStatusHeaders status200 [("Content-Type", "application/javascript")]
 
+jsonpWith :: ( A.ToJSON j
+             , Monad m
+             ) => (Response -> Response) -> j -> FileExtListenerT Response m ()
+jsonpWith f = jsonStatusHeadersWith f status200 [("Content-Type", "application/javascript")]
+
 jsonpStatus :: ( A.ToJSON j
-        , Monad m ) =>
-        Status -> j -> FileExtListenerT Response m ()
+               , Monad m
+               ) => Status -> j -> FileExtListenerT Response m ()
 jsonpStatus s = jsonStatusHeaders s [("Content-Type", "application/javascript")]
 
+jsonpStatusWith :: ( A.ToJSON j
+                   , Monad m
+                   ) => (Response -> Response) -> Status -> j -> FileExtListenerT Response m ()
+jsonpStatusWith f s = jsonStatusHeadersWith f s [("Content-Type", "application/javascript")]
+
 jsonHeaders :: ( A.ToJSON j
-        , Monad m ) =>
-        RequestHeaders -> j -> FileExtListenerT Response m ()
+               , Monad m
+               ) => RequestHeaders -> j -> FileExtListenerT Response m ()
 jsonHeaders = jsonStatusHeaders status200
 
+jsonHeadersWith :: ( A.ToJSON j
+                   , Monad m
+                   ) => (Response -> Response) -> RequestHeaders -> j -> FileExtListenerT Response m ()
+jsonHeadersWith f = jsonStatusHeadersWith f status200
+
 jsonStatusHeaders :: ( A.ToJSON j
-        , Monad m ) =>
-        Status -> RequestHeaders -> j -> FileExtListenerT Response m ()
-jsonStatusHeaders s hs i =
+                     , Monad m
+                     ) => Status -> RequestHeaders -> j -> FileExtListenerT Response m ()
+jsonStatusHeaders = jsonStatusHeadersWith id
+
+jsonStatusHeadersWith :: ( A.ToJSON j
+                         , Monad m
+                         ) => (Response -> Response) -> Status -> RequestHeaders -> j -> FileExtListenerT Response m ()
+jsonStatusHeadersWith f s hs i =
   let r = jsonOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton Json r
+    FileExts $ singleton Json $ f r
 
 
 
@@ -78,4 +108,3 @@ jsonOnlyStatusHeaders :: A.ToJSON j =>
             Status -> RequestHeaders -> j -> Response
 jsonOnlyStatusHeaders s hs i =
   bytestringOnlyStatus s hs $ A.encode i
-

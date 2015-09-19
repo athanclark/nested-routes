@@ -22,11 +22,20 @@ import           Control.Monad.Writer
 text :: Monad m => LT.Text -> FileExtListenerT Response m ()
 text = textStatusHeaders status200 [("Content-Type", "text/plain")]
 
+textWith :: Monad m => (Response -> Response) -> LT.Text -> FileExtListenerT Response m ()
+textWith f = textStatusHeadersWith f status200 [("Content-Type", "text/plain")]
+
 textStatus :: Monad m => Status -> LT.Text -> FileExtListenerT Response m ()
 textStatus s = textStatusHeaders s [("Content-Type", "text/plain")]
 
+textStatusWith :: Monad m => (Response -> Response) -> Status -> LT.Text -> FileExtListenerT Response m ()
+textStatusWith f s = textStatusHeadersWith f s [("Content-Type", "text/plain")]
+
 textHeaders :: Monad m => RequestHeaders -> LT.Text -> FileExtListenerT Response m ()
 textHeaders = textStatusHeaders status200
+
+textHeadersWith :: Monad m => (Response -> Response) -> RequestHeaders -> LT.Text -> FileExtListenerT Response m ()
+textHeadersWith f = textStatusHeadersWith f status200
 
 textStatusHeaders :: Monad m => Status -> RequestHeaders -> LT.Text -> FileExtListenerT Response m ()
 textStatusHeaders = textStatusHeadersWith id

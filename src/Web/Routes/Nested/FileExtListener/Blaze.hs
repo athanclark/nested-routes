@@ -21,17 +21,29 @@ import           Control.Monad.Writer
 blaze :: Monad m => H.Html -> FileExtListenerT Response m ()
 blaze = blazeStatusHeaders status200 [("Content-Type", "text/html")]
 
+blazeWith :: Monad m => (Response -> Response) -> H.Html -> FileExtListenerT Response m ()
+blazeWith f = blazeStatusHeadersWith f status200 [("Content-Type", "text/html")]
+
 blazeStatus :: Monad m => Status -> H.Html -> FileExtListenerT Response m ()
 blazeStatus s = blazeStatusHeaders s [("Content-Type", "text/html")]
+
+blazeStatusWith :: Monad m => (Response -> Response) -> Status -> H.Html -> FileExtListenerT Response m ()
+blazeStatusWith f s = blazeStatusHeadersWith f s [("Content-Type", "text/html")]
 
 blazeHeaders :: Monad m => RequestHeaders -> H.Html -> FileExtListenerT Response m ()
 blazeHeaders = blazeStatusHeaders status200
 
+blazeHeadersWith :: Monad m => (Response -> Response) -> RequestHeaders -> H.Html -> FileExtListenerT Response m ()
+blazeHeadersWith f = blazeStatusHeadersWith f status200
+
 blazeStatusHeaders :: Monad m => Status -> RequestHeaders -> H.Html -> FileExtListenerT Response m ()
-blazeStatusHeaders s hs i =
+blazeStatusHeaders = blazeStatusHeadersWith id
+
+blazeStatusHeadersWith :: Monad m => (Response -> Response) -> Status -> RequestHeaders -> H.Html -> FileExtListenerT Response m ()
+blazeStatusHeadersWith f s hs i =
   let r = blazeOnlyStatusHeaders s hs i in
   FileExtListenerT $ tell $
-    FileExts $ singleton Html r
+    FileExts $ singleton Html $ f r
 
 
 
@@ -47,5 +59,3 @@ blazeOnlyStatus s = blazeOnlyStatusHeaders s [("Content-Type", "text/html")]
 blazeOnlyStatusHeaders :: Status -> RequestHeaders -> H.Html -> Response
 blazeOnlyStatusHeaders s hs i =
   bytestringOnlyStatus s hs $ LT.encodeUtf8 $ H.renderHtml i
-
-
