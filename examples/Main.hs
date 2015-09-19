@@ -16,6 +16,7 @@ import Text.Regex
 import Data.Monoid
 import qualified Data.Text.Lazy as LT
 import Control.Monad.Error.Class
+import Control.Monad.IO.Class
 
 import Debug.Trace
 
@@ -44,15 +45,16 @@ defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
 main :: IO ()
 main =
-  let app = routeAuth authorize $
-              handle o (Just rootHandle) $ Just $ do
-                handle fooRoute (Just fooHandle) $ Just $ do
-                  auth AuthRole unauthHandle ProtectChildren
-                  handle barRoute    (Just barHandle)    Nothing
-                  handle doubleRoute (Just doubleHandle) Nothing
-                handle emailRoute (Just emailHandle) Nothing
-                handle bazRoute (Just bazHandle) Nothing
-                notFound o (Just notFoundHandle) Nothing
+  let app = routeAuth authorize routes
+      routes =
+        handle o (Just rootHandle) $ Just $ do
+          handle fooRoute (Just fooHandle) $ Just $ do
+            auth AuthRole unauthHandle ProtectChildren
+            handle barRoute    (Just barHandle)    Nothing
+            handle doubleRoute (Just doubleHandle) Nothing
+          handle emailRoute (Just emailHandle) Nothing
+          handle bazRoute (Just bazHandle) Nothing
+          notFound o (Just notFoundHandle) Nothing
   in run 3000 $ app defApp
   where
     rootHandle = get $ text "Home"
@@ -77,7 +79,13 @@ main =
 
     -- `/baz`
     bazRoute = l "baz" </> o
-    bazHandle = get $ text "baz!"
+    bazHandle = do
+      get $ text "baz!"
+      let uploader bytes = do r <- liftIO $ print bytes
+                              return $ Just r
+          uploadHandle Nothing = text "Upload Failed"
+          uploadHandle (Just ()) = text "Woah! Upload content!"
+      postMax 1 uploader uploadHandle
 
     unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
     notFoundHandle = get $ textStatus status404 "Not Found :("
