@@ -299,7 +299,7 @@ extractAuthSym hs req = do
   return $ foldl go [] (PT.matchesRPT (pathInfo req) trie)
   where
     go ys (_,(_,ProtectChildren),[]) = ys
-    go ys (pre,(x,_),suff) = ys ++ [x]
+    go ys (_,(x,_),_) = ys ++ [x]
 
 
 extractAuth :: ( Functor m
