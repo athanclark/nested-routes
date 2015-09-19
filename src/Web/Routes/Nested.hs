@@ -39,6 +39,7 @@ module Web.Routes.Nested
   , actionToMiddleware
   , lookupVerb
   , lookupFileExt
+  , lookupUpload
   , lookupResponse
   , handleUpload
   -- ** File Extensions
@@ -369,17 +370,21 @@ actionToMiddleware mAcceptBS f v found app req respond = do
     return $ liftIO $ respond r
   fromMaybe (app req respond) mApp
 
--- lookupUpload :: MonadIO m =>
---                   Maybe AcceptHeader
---                -> FileExt
---                -> Verb
---                -> Request
---                -> ActionT u m ()
---                -> m (Maybe (HandleUpload u m, Maybe u -> ))
+
+lookupUpload :: Monad m =>
+                Verb
+             -> Request
+             -> VerbListenerT r u m ()
+             -> m (Maybe (HandleUpload u m, Maybe u -> r))
 lookupUpload v req action = runMaybeT $ do
   vmap <- lift $ execVerbListenerT action
   hoistMaybe $ lookupVerb v req vmap
 
+lookupResponse :: Monad m =>
+                  Maybe AcceptHeader
+               -> FileExt
+               -> FileExtListenerT a m ()
+               -> m (Maybe a)
 lookupResponse mAcceptBS f fexts = runMaybeT $ do
   femap <- lift $ execFileExtListenerT fexts
   hoistMaybe $ lookupFileExt mAcceptBS f femap
