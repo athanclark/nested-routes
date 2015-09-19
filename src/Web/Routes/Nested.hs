@@ -106,6 +106,8 @@ execHandlerT = execWriterT . runHandlerT
 
 type ActionT u m a = VerbListenerT (FileExtListenerT Response m a) u m a
 
+type RoutesT u s e m a = HandlerT (ActionT u m a) (s, AuthScope) (e -> ActionT u m a) e u m a
+
 -- | For routes ending with a literal.
 handle :: ( Monad m
           , Functor m
@@ -263,7 +265,7 @@ routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
-               -> HandlerT (ActionT u m ()) (sec, AuthScope) (e -> ActionT u m ()) e u m a -- ^ Assembled @handle@ calls
+               -> RoutesT u sec e m () -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
 
