@@ -47,7 +47,7 @@ main =
   let app = routeAuth authorize $
               handle o (Just rootHandle) $ Just $ do
                 handle fooRoute (Just fooHandle) $ Just $ do
-                  auth AuthRole unauthHandle
+                  auth AuthRole unauthHandle ProtectChildren
                   handle barRoute    (Just barHandle)    Nothing
                   handle doubleRoute (Just doubleHandle) Nothing
                 handle emailRoute (Just emailHandle) Nothing

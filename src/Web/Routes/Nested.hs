@@ -20,6 +20,7 @@ module Web.Routes.Nested
   , ActionT
   , ApplicationT
   , MiddlewareT
+  , AuthScope (..)
   -- * Combinators
   , handle
   , parent
@@ -178,16 +179,20 @@ parent ts cs = do
        )
 
 
+data AuthScope = ProtectParent | ProtectChildren
+  deriving (Show, Eq)
+
 -- | Sets the security role and error handler for a scope of routes.
 auth :: ( Monad m
         , Functor m
         ) => sec
           -> err
-          -> HandlerT content sec err e m ()
-auth s handleFail =
+          -> AuthScope
+          -> HandlerT content (sec, AuthScope) err e m ()
+auth token handleFail scope =
   tell ( mempty
        , mempty
-       , RootedPredTrie (Just s) mempty
+       , RootedPredTrie (Just (token,scope)) mempty
        , RootedPredTrie (Just handleFail) mempty
        )
 
@@ -257,7 +262,7 @@ routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
-               -> HandlerT (ActionT m ()) sec (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
+               -> HandlerT (ActionT m ()) (sec, AuthScope) (e -> ActionT m ()) e m a -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
 
@@ -285,20 +290,22 @@ extractContent hs app req respond = do
 -- a request and your routing system.
 extractAuthSym :: ( Functor m
                   , Monad m
-                  ) => HandlerT x sec err e m a
+                  ) => HandlerT x (sec, AuthScope) err e m a
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
   (_,_,trie,_) <- execHandlerT hs
-  return $ getResultsFromMatch <$> -- the tokens /breached/, not reached.
-    filter (\(_,_,x) -> not $ null x) (PT.matchesRPT (pathInfo req) trie)
+  return $ foldl go [] (PT.matchesRPT (pathInfo req) trie)
+  where
+    go ys (_,(_,ProtectChildren),[]) = ys
+    go ys (pre,(x,_),suff) = ys ++ [x]
 
 
 extractAuth :: ( Functor m
                    , Monad m
                    , MonadIO m
                    ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
-                     -> HandlerT x sec (e -> ActionT m ()) e m a
+                     -> HandlerT x (sec, AuthScope) (e -> ActionT m ()) e m a
                      -> MiddlewareT m
 extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
