@@ -75,14 +75,12 @@ import           Data.Function.Poly
 import           Data.List hiding (filter)
 
 import           Control.Error.Util
-import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
-import           Control.Monad.Except
 
 
 type Tries x s e e' = ( RootedPredTrie T.Text x
@@ -368,8 +366,8 @@ actionToMiddleware mAcceptBS f v found app req respond = do
     (reqbodyf, continue) <- hoistMaybe mContinue
     mUploadData          <- lift reqbodyf
     mResponse            <- lift $ lookupResponse mAcceptBS f $ continue mUploadData
-    r                    <- hoistMaybe mResponse
-    return $ liftIO $ respond r
+    response             <- hoistMaybe mResponse
+    return $ liftIO $ respond response
   fromMaybe (app req respond) mApp
 
 
@@ -479,10 +477,10 @@ lookupWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
                      if null ts then mx
                                 else lookupWithLPT f (NE.fromList ts) =<< mxs
 
-    goPred (PredStep _ p mx xs) = do
-      r <- p t
-      if null ts then mx <$~> r
-                 else lookupWithLPT f (NE.fromList ts) xs <$~> r
+    goPred (PredStep _ predicate mx xs) = do
+      d <- predicate t
+      if null ts then mx <$~> d
+                 else lookupWithLPT f (NE.fromList ts) xs <$~> d
 
 lookupWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe a
 lookupWithLRPT _ [] (RootedPredTrie mx _) = mx

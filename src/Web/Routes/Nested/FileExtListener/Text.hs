@@ -14,7 +14,6 @@ import           Network.HTTP.Types                      (RequestHeaders,
                                                           Status, status200)
 import           Network.Wai
 
-import           Data.Composition
 import           Control.Monad.Writer
 
 

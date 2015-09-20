@@ -1,8 +1,5 @@
 {-# LANGUAGE
-    DeriveFunctor
-  , DeriveFoldable
-  , DeriveTraversable
-  , GeneralizedNewtypeDeriving
+    GeneralizedNewtypeDeriving
   , ScopedTypeVariables
   , MultiParamTypeClasses
   , TupleSections
@@ -13,17 +10,11 @@ module Web.Routes.Nested.VerbListener where
 import           Network.Wai (Request)
 import           Network.HTTP.Types (StdMethod (..))
 
-import           Data.Foldable
 import           Data.Function.Syntax
 import           Data.Bifunctor
-import           Data.Traversable
 import           Data.Map (Map)
 import qualified Data.Map                             as Map
-import qualified Data.ByteString.Lazy                 as BL
-import           Data.Word                            (Word64)
 import           Data.Set.Class                       as Sets
-import           Control.Arrow hiding (second)
-import           Control.Applicative hiding (empty)
 import           Control.Monad.Trans
 import           Control.Monad.Writer
 

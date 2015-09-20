@@ -9,7 +9,6 @@ import           Web.Routes.Nested.FileExtListener.ByteString
 
 import           Data.Map
 import           Text.Cassius
-import qualified Data.Text.Lazy                          as LT
 import qualified Data.Text.Lazy.Encoding                 as LT
 import           Network.HTTP.Types                      (RequestHeaders,
                                                           Status, status200)

@@ -10,13 +10,9 @@ module Web.Routes.Nested.FileExtListener.Types where
 
 import qualified Data.Text            as T
 
-import           Control.Applicative
 import           Control.Monad.Trans
 import           Control.Monad.Writer
-import           Data.Foldable        hiding (elem)
 import           Data.Map
-import           Data.Monoid
-import           Data.Traversable
 
 
 -- | Supported file extensions

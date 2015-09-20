@@ -17,10 +17,6 @@ module Web.Routes.Nested.Types
   , Extend (..)
   , Extrude (..)
   , CatMaybes
-  , eitherToMaybe
-  , restAreLits
-  , ToNE (..)
-  , ToL (..)
   , module Web.Routes.Nested.Types.UrlChunks
   ) where
 
@@ -28,7 +24,6 @@ import           Data.Attoparsec.Text
 import           Text.Regex
 import           Web.Routes.Nested.Types.UrlChunks
 import qualified Data.Text as T
-import           Data.List.NonEmpty
 import           Data.Trie.Pred
 import           Data.Trie.Pred.Step
 import qualified Data.Trie.Map as MT
@@ -46,13 +41,13 @@ class Singleton chunks a trie | chunks a -> trie where
 
 -- Basis
 instance Singleton (UrlChunks '[]) a (RootedPredTrie T.Text a) where
-  singleton Root r = RootedPredTrie (Just r) emptyPT
+  singleton Root r' = RootedPredTrie (Just r') emptyPT
 
 -- Successor
 instance ( Singleton (UrlChunks xs) a trie0
          , Extend (EitherUrlChunk x) trie0 trie1
          ) => Singleton (UrlChunks (x ': xs)) a trie1 where
-  singleton (Cons u us) r = extend u (singleton us r)
+  singleton (Cons u us) r' = extend u (singleton us r')
 
 
 -- | Turn a list of tries (@Rooted@) into a node with those children
@@ -78,41 +73,20 @@ class Extrude chunks start result | chunks start -> result where
 
 -- Basis
 instance Extrude (UrlChunks '[]) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
-  extrude Root r = r
+  extrude Root r' = r'
 
 -- Successor
 instance ( Extrude (UrlChunks xs) trie0 trie1
          , Extend (EitherUrlChunk x) trie1 trie2 ) => Extrude (UrlChunks (x ': xs)) trie0 trie2 where
-  extrude (Cons u us) r = extend u (extrude us r)
+  extrude (Cons u us) r' = extend u (extrude us r')
 
 
 eitherToMaybe :: Either String r -> Maybe r
-eitherToMaybe (Right r) = Just r
+eitherToMaybe (Right r') = Just r'
 eitherToMaybe _         = Nothing
 
-restAreLits :: UrlChunks xs -> Bool
-restAreLits Root = False
-restAreLits (Cons ((:=) _) Root) = True
-restAreLits (Cons ((:=) _) us)   = restAreLits us
-restAreLits (Cons _ _) = False
-
-
--- | Unravels a @UrlChunks@ of /only literals/ into a list.
-class ToL chunks where
-  toL :: chunks -> [T.Text]
-
-instance ToL (UrlChunks '[]) where
-  toL Root = []
-
-instance ToL (UrlChunks xs) => ToL (UrlChunks ('Nothing ': xs)) where
-  toL (Cons ((:=) t) us) = t : toL us
-
--- | Unravels a @UrlChunks@ of /only literals/ into a @NonEmpty@ list.
-class ToNE chunks where
-  toNE :: chunks -> NonEmpty T.Text
-
-instance ToNE (UrlChunks ('Nothing ': '[])) where
-  toNE (Cons ((:=) t) Root) = t :| []
-
-instance ToNE (UrlChunks xs) => ToNE (UrlChunks ('Nothing ': xs)) where
-  toNE (Cons ((:=) t) us) = t :| (toList $ toNE us)
+-- restAreLits :: UrlChunks xs -> Bool
+-- restAreLits Root = False
+-- restAreLits (Cons ((:=) _) Root) = True
+-- restAreLits (Cons ((:=) _) us)   = restAreLits us
+-- restAreLits (Cons _ _) = False
