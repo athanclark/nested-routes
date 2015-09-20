@@ -15,13 +15,14 @@ import           Network.HTTP.Types (StdMethod (..))
 
 import           Data.Foldable
 import           Data.Function.Syntax
+import           Data.Bifunctor
 import           Data.Traversable
 import           Data.Map (Map)
 import qualified Data.Map                             as Map
 import qualified Data.ByteString.Lazy                 as BL
 import           Data.Word                            (Word64)
 import           Data.Set.Class                       as Sets
-import           Control.Arrow
+import           Control.Arrow hiding (second)
 import           Control.Applicative hiding (empty)
 import           Control.Monad.Trans
 import           Control.Monad.Writer
@@ -29,30 +30,25 @@ import           Control.Monad.Writer
 
 type Verb = StdMethod
 
-type BodyLength = Word64
-type Upload u m = BL.ByteString -> m (Maybe u)
-type HandleUpload u m = Maybe (Upload u m, Maybe BodyLength)
-
-type RespondEither r u = Either (Maybe u -> r) (Request -> Maybe u -> r)
-type ResponseSpec r u m = (HandleUpload u m, RespondEither r u)
+type HandleUpload m u   = Request -> m (Maybe u)
+type Respond u r        = Request -> Maybe u -> r
+type ResponseSpec u m r = (HandleUpload m u, Respond u r)
 
 
 -- * Verb Map
 
 newtype Verbs u m r = Verbs
-  { unVerbs :: Map Verb (ResponseSpec r u m)
+  { unVerbs :: Map Verb (ResponseSpec u m r)
   } deriving (Monoid, HasUnion, HasEmpty)
 
 -- | To compensate for responses that want to peek into the @Request@ object.
 supplyReq :: Request
-          -> Map Verb (ResponseSpec r u m)
-          -> Map Verb (HandleUpload u m, Maybe u -> r)
-supplyReq req xs = second (either id ($ req)) <$> xs
+          -> Map Verb (ResponseSpec u m r)
+          -> Map Verb (m (Maybe u), Maybe u -> r)
+supplyReq req xs = bimap ($ req) ($ req) <$> xs
 
 instance Functor (Verbs u m) where
-  fmap f (Verbs xs) = Verbs $ fmap go xs
-    where go (x, Left r)  = (x, Left $ f . r)
-          go (x, Right r) = (x, Right $ f .* r)
+  fmap f (Verbs xs) = Verbs $ fmap (second (f .*)) xs
 
 -- instance Foldable (Verbs u m) where
 --   foldMap f (Verbs xs) = foldMap go xs
@@ -86,70 +82,61 @@ foldMWithKey f i = Map.foldlWithKey (\macc k a -> (\mer -> f mer k a) =<< macc) 
 -- | For simple @GET@ responses
 get :: ( Monad m
        ) => r -> VerbListenerT r u m ()
-get r = tell $ Union $ Verbs $ Map.singleton GET (Nothing, Left $ const r)
+get r = tell $ Union $ Verbs $ Map.singleton GET ( const $ return Nothing
+                                                 , const $ const r
+                                                 )
 
 -- | Inspect the @Request@ object supplied by WAI
 getReq :: ( Monad m
           ) => (Request -> r) -> VerbListenerT r u m ()
-getReq r = tell $ Union $ Verbs $ Map.singleton GET (Nothing, Right $ const . r)
+getReq r = tell $ Union $ Verbs $ Map.singleton GET ( const $ return Nothing
+                                                    , const . r)
 
 
 -- | For simple @POST@ responses
 post :: ( Monad m
         , MonadIO m
-        ) => Upload u m -> (Maybe u -> r) -> VerbListenerT r u m ()
-post handle r = tell $ Union $ Verbs $ Map.singleton POST (Just (handle, Nothing), Left r)
+        ) => HandleUpload m u -> (Maybe u -> r) -> VerbListenerT r u m ()
+post handle r = tell $ Union $ Verbs $ Map.singleton POST ( handle
+                                                          , const r
+                                                          )
 
 -- | Inspect the @Request@ object supplied by WAI
 postReq :: ( Monad m
            , MonadIO m
-           ) => Upload u m -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
-postReq handle r = tell $ Union $ Verbs $ Map.singleton POST (Just (handle, Nothing), Right r)
-
--- | Supply a maximum size bound for file uploads
-postMax :: ( Monad m
-           , MonadIO m
-           ) => BodyLength -> Upload u m -> (Maybe u -> r) -> VerbListenerT r u m ()
-postMax bl handle r = tell $ Union $ Verbs $ Map.singleton POST (Just (handle, Just bl), Left r)
-
--- | Inspect the @Request@ object supplied by WAI
-postMaxReq :: ( Monad m
-              , MonadIO m
-              ) => BodyLength -> Upload u m -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
-postMaxReq bl handle r = tell $ Union $ Verbs $ Map.singleton POST (Just (handle, Just bl), Right r)
+           ) => HandleUpload m u -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
+postReq handle r = tell $ Union $ Verbs $ Map.singleton POST ( handle
+                                                             , r
+                                                             )
 
 
 -- | For simple @PUT@ responses
 put :: ( Monad m
        , MonadIO m
-       ) => Upload u m -> r -> VerbListenerT r u m ()
-put handle r = tell $ Union $ Verbs $ Map.singleton PUT (Just (handle, Nothing), Left $ const r)
+       ) => HandleUpload m u -> (Maybe u -> r) -> VerbListenerT r u m ()
+put handle r = tell $ Union $ Verbs $ Map.singleton PUT ( handle
+                                                        , const r
+                                                        )
 
 -- | Inspect the @Request@ object supplied by WAI
 putReq :: ( Monad m
           , MonadIO m
-          ) => Upload u m -> (Request -> r) -> VerbListenerT r u m ()
-putReq handle r = tell $ Union $ Verbs $ Map.singleton PUT (Just (handle, Nothing), Right $ const . r)
-
--- | Supply a maximum size bound for file uploads
-putMax :: ( Monad m
-          , MonadIO m
-          ) => BodyLength -> Upload u m -> (Maybe u -> r) -> VerbListenerT r u m ()
-putMax bl handle r = tell $ Union $ Verbs $ Map.singleton PUT (Just (handle, Just bl), Left r)
-
--- | Inspect the @Request@ object supplied by WAI
-putMaxReq :: ( Monad m
-             , MonadIO m
-             ) => BodyLength -> Upload u m -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
-putMaxReq bl handle r = tell $ Union $ Verbs $ Map.singleton PUT (Just (handle, Just bl), Right r)
+          ) => HandleUpload m u -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
+putReq handle r = tell $ Union $ Verbs $ Map.singleton PUT ( handle
+                                                           , r
+                                                           )
 
 
 -- | For simple @DELETE@ responses
 delete :: ( Monad m
           ) => r -> VerbListenerT r u m ()
-delete r = tell $ Union $ Verbs $ Map.singleton DELETE (Nothing, Left $ const r)
+delete r = tell $ Union $ Verbs $ Map.singleton DELETE ( const $ return Nothing
+                                                       , const $ const r
+                                                       )
 
 -- | Inspect the @Request@ object supplied by WAI
 deleteReq :: ( Monad m
              ) => (Request -> r) -> VerbListenerT r u m ()
-deleteReq r = tell $ Union $ Verbs $ Map.singleton DELETE (Nothing, Right $ const . r)
+deleteReq r = tell $ Union $ Verbs $ Map.singleton DELETE ( const $ return Nothing
+                                                          , const . r
+                                                          )

@@ -42,7 +42,6 @@ module Web.Routes.Nested
   , lookupFileExt
   , lookupUpload
   , lookupResponse
-  , handleUpload
   -- ** File Extensions
   , possibleFileExts
   , trimFileExt
@@ -365,11 +364,11 @@ actionToMiddleware :: MonadIO m =>
                    -> MiddlewareT m
 actionToMiddleware mAcceptBS f v found app req respond = do
   mApp <- runMaybeT $ do
-    mContinue <- lift $ lookupUpload v req found
-    (mreqbodyf, continue) <- hoistMaybe mContinue
-    mUpload   <- lift $ handleUpload mreqbodyf req
-    mResponse <- lift $ lookupResponse mAcceptBS f $ continue mUpload
-    r <- hoistMaybe mResponse
+    mContinue            <- lift $ lookupUpload v req found
+    (reqbodyf, continue) <- hoistMaybe mContinue
+    mUploadData          <- lift reqbodyf
+    mResponse            <- lift $ lookupResponse mAcceptBS f $ continue mUploadData
+    r                    <- hoistMaybe mResponse
     return $ liftIO $ respond r
   fromMaybe (app req respond) mApp
 
@@ -378,7 +377,7 @@ lookupUpload :: Monad m =>
                 Verb
              -> Request
              -> VerbListenerT r u m ()
-             -> m (Maybe (HandleUpload u m, Maybe u -> r))
+             -> m (Maybe (m (Maybe u), Maybe u -> r))
 lookupUpload v req action = runMaybeT $ do
   vmap <- lift $ execVerbListenerT action
   hoistMaybe $ lookupVerb v req vmap
@@ -393,21 +392,7 @@ lookupResponse mAcceptBS f fexts = runMaybeT $ do
   hoistMaybe $ lookupFileExt mAcceptBS f femap
 
 
-handleUpload :: MonadIO m =>
-                HandleUpload u m
-             -> Request
-             -> m (Maybe u)
-handleUpload mreqbodyf req = case mreqbodyf of
-  Nothing              -> return Nothing
-  Just (reqbf,Nothing) -> go reqbf
-  Just (reqbf,Just bl) -> case requestBodyLength req of
-    KnownLength bl' | bl' <= bl -> go reqbf
-    _                           -> return Nothing
-  where go reqbf = reqbf =<< liftIO (strictRequestBody req)
-
-
-
-lookupVerb :: Verb -> Request -> Verbs u m r -> Maybe (HandleUpload u m, Maybe u -> r)
+lookupVerb :: Verb -> Request -> Verbs u m r -> Maybe (m (Maybe u), Maybe u -> r)
 lookupVerb v req vmap = Map.lookup v $ supplyReq req $ unVerbs vmap
 
 

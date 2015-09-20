@@ -81,11 +81,11 @@ main =
     bazRoute = l "baz" </> o
     bazHandle = do
       get $ text "baz!"
-      let uploader bytes = do r <- liftIO $ print bytes
-                              return $ Just r
+      let uploader req = do liftIO $ print =<< strictRequestBody req
+                            return $ Just ()
           uploadHandle Nothing = text "Upload Failed"
           uploadHandle (Just ()) = text "Woah! Upload content!"
-      postMax 1 uploader uploadHandle
+      post uploader uploadHandle
 
     unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
     notFoundHandle = get $ textStatus status404 "Not Found :("

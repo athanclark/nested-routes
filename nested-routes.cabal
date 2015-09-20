@@ -145,6 +145,7 @@ Library
                       , shakespeare
                       , clay
                       , bytestring
+                      , bifunctors
                       , attoparsec
                       , regex-compat
                       , pred-trie >= 0.3
