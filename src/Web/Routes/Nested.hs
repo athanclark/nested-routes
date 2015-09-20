@@ -18,6 +18,7 @@ module Web.Routes.Nested
   , Tries
   , HandlerT (..)
   , ActionT
+  , RoutesT
   , ApplicationT
   , MiddlewareT
   , AuthScope (..)
