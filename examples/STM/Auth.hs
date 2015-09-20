@@ -18,6 +18,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64 as BS
 import Blaze.ByteString.Builder (toByteString)
 import qualified Data.IntMap as IntMap
 import Data.ByteString.UTF8 (fromString, toString)
@@ -34,9 +35,12 @@ import Control.Error.Util
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Control.Monad
 import Crypto.Random
 import Crypto.Random.Types
 import Crypto.Hash
+
+import Debug.Trace
 
 
 -- | @sec@
@@ -67,32 +71,55 @@ makeSessionCookies (UserSession i t c) = repeat "Set-Cookie" `zip` cookies
     cookies =
       [ toByteString $
         renderSetCookie $ def { setCookieName = sessionId
+                              , setCookieMaxAge = Just 60
                               , setCookieValue = fromString $ show i }
       , toByteString $
-        renderSetCookie $ def { setCookieName = sessionNonce
+        renderSetCookie $ def { setCookieName = sessionTime
+                              , setCookieMaxAge = Just 60
                               , setCookieValue = T.encodeUtf8 $ T.pack $ formatISO8601 t }
       , toByteString $
-        renderSetCookie $ def { setCookieName = sessionTime
+        renderSetCookie $ def { setCookieName = sessionNonce
+                              , setCookieMaxAge = Just 60
                               , setCookieValue = c }
       ]
+
+clearSessionResponse :: Response -> Response
+clearSessionResponse = mapResponseHeaders $
+  filter $ \(a,b) ->
+    let cookieName = setCookieName $ parseSetCookie b
+    in not $ a == "Set-Cookie" && ( cookieName == sessionId
+                                 || cookieName == sessionTime
+                                 || cookieName == sessionNonce )
+
+clearSessionRequest :: Request -> Request
+clearSessionRequest req =
+  req {requestHeaders = go $ requestHeaders req}
+  where
+    go = filter $ \(a,b) ->
+      let cookies = parseCookies b
+          hasSession (k,_) = k == sessionId || k == sessionTime || k == sessionNonce
+      in not $ a == "Cookie" && any hasSession cookies
 
 getUserSession :: RequestHeaders -> Maybe (UserSession BS.ByteString)
 getUserSession hs =
   let (mi,mt,mc) = foldr go (Nothing,Nothing,Nothing) hs
   in UserSession <$> mi <*> mt <*> mc
   where
-    go (k,c) (mi,mt,mc) | k == "Set-Cookie" =
-      let c' = parseSetCookie c
-      in case setCookieName c' of
-            name | name == sessionId    -> (hush $ parseOnly integer $ T.decodeUtf8 $ setCookieValue c', mt, mc)
-                 | name == sessionNonce -> (mi, mt, Just $ setCookieValue c')
-                 | name == sessionTime  -> (mi, parseISO8601 $ show $ setCookieValue c', mc)
+    go (k,c) (mi,mt,mc) | k == "Cookie" =
+        let cs = parseCookies c
+            go' (k',c') (mi',mt',mc')
+              | k' == sessionId = (hush $ parseOnly integer $ T.decodeUtf8 c', mt', mc')
+              | k' == sessionTime = (mi', parseISO8601 $ T.unpack $ T.decodeUtf8 c', mc')
+              | k' == sessionNonce = (mi', mt', Just c')
+              | otherwise = (mi',mt',mc')
+        in foldr go' (mi,mt,mc) cs
+      | otherwise = (mi,mt,mc)
 
 
 integer :: Parser Int
 integer = do
-  xs <- many1 digit
-  return $ fst $ foldr (\n (m,d) -> (m + (read [n]) * d, d+10)) (0,1) xs
+  xs <- double
+  return $ floor xs
 
 
 
@@ -113,10 +140,10 @@ newUserSession = do
     modifyTVar' uIdKey (+1)
     return i
   now <- liftIO getCurrentTime
-  return $ UserSession uId now $ convert $ go now salt
+  return $ UserSession uId now $ BS.encode $ convert $ go now salt
   where
     go :: UTCTime -> BS.ByteString -> Digest SHA512
-    go now salt = hash $ salt <> fromString (show now)
+    go now salt = hash $ salt <> fromString (formatISO8601 now)
 
 
 lookupUserSession :: ( MonadIO m
@@ -151,7 +178,7 @@ checkUserSession :: MonadReader AuthEnv m =>
 checkUserSession (UserSession _ t c) = do
   salt <- authEnvSalt <$> ask
   let old = hash $ salt <> fromString (formatISO8601 t) :: Digest SHA512
-      old' = convert old :: BS.ByteString
+      old' = BS.encode $ convert old :: BS.ByteString
   return $ c == old'
 
 
@@ -168,23 +195,26 @@ authenticate :: ( MonadIO m
                 ) => Request -> [SecurityLayer] -> m (Response -> Response)
 authenticate _ [] = return id
 authenticate req _ = do
-  let sessions    = (\(a,b) -> parseSetCookie b) <$> requestHeaders req
+  liftIO $ putStrLn "<!> Auth Attempt <!>"
+  liftIO $ putStrLn "--- Headers ----------- \n" >> print (requestHeaders req) >> putStrLn "\n"
   userSession        <- note' NoSessionHeaders $ getUserSession $ requestHeaders req
   userSessionIsValid <- checkUserSession userSession
-  now                <- liftIO getCurrentTime
-  -- cacheVar           <- authEnvCache <$> ask
-  newUserSess        <- newUserSession
+  liftIO $ putStrLn "--- User Session ------ \n" >> print userSession >> putStrLn "\n"
+  cacheKey <- authEnvCache <$> ask
+  cache <- liftIO $ readTVarIO cacheKey
+  liftIO $ putStrLn "--- Cache ------------- \n" >> print cache >> putStrLn "\n"
   mCachedSession     <- lookupUserSession (userSessID userSession)
-  (UserSession i oldTime oldNonce) <- note' SessionNotInCache mCachedSession
+  (UserSession i cachedTime cachedNonce) <- note' SessionNotInCache mCachedSession
+  newUserSess'       <- newUserSession
+  let newUserSess = newUserSess' {userSessID = i}
   case () of
-    () | diffUTCTime now oldTime >= 60         -> do deleteUserSession i
-                                                     throwError SessionTimedOut
-       | oldNonce /= userSessNonce userSession -> throwError SessionMismatch
-       | not userSessionIsValid                -> throwError InvalidRequestNonce
+    () | diffUTCTime (userSessTime newUserSess) cachedTime >= 60 -> do deleteUserSession i
+                                                                       throwError SessionTimedOut
+       | cachedNonce /= userSessNonce userSession -> throwError SessionMismatch
+       | not userSessionIsValid                   -> throwError InvalidRequestNonce
        | otherwise -> do writeUserSession newUserSess
                          return $ mapResponseHeaders (++ makeSessionCookies newUserSess)
-
-
+                                . clearSessionResponse
 
 
 note' e mx = fromMaybe (throwError e) $ pure <$> mx

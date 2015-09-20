@@ -104,6 +104,16 @@ Description:
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
 
+
+Flag Example
+  Description:          Build the trivial example.
+  Default:              False
+
+Flag Example-STM
+  Description:          Build the Sha512 / STM nonce cache example.
+  Default:              False
+
+
 Library
   Default-Language:     Haskell2010
   HS-Source-Dirs:       src
@@ -287,7 +297,7 @@ Executable example-stm
                       , cookie
                       , data-default
                       , blaze-builder
-
+                      , base64-bytestring
 
 Source-Repository head
   Type:                 git

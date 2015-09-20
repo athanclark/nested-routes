@@ -67,8 +67,8 @@ main = do
         handle emailRoute (Just emailHandle) Nothing
         handle bazRoute (Just bazHandle) Nothing
         handle loginRoute (Just loginHandle) Nothing
-        -- handle logoutRoute (Just logoutHandle) $ Just $
-        --   auth ShouldBeLoggedIn unauthHandle ProtectParent
+        handle logoutRoute (Just logoutHandle) $ Just $
+          auth ShouldBeLoggedIn unauthHandle ProtectParent
         notFound o (Just notFoundHandle) Nothing
   run 3000 $ app defApp
   where
@@ -108,7 +108,7 @@ main = do
       postReq (login 128) loginResp
         where
           loginResp _ Nothing = textStatus status500 "Server malfunction :E"
-          loginResp _ (Just InvalidLoginAttempt) = textStatus status403 "Bad login"
+          loginResp _ (Just InvalidLoginAttempt) = textStatusWith clearSessionResponse status403 "Bad login"
           loginResp _ (Just (Success u)) = textWith (mapResponseHeaders (++ makeSessionCookies u)) "logged-in"
 
     login s req =
@@ -121,6 +121,7 @@ main = do
             mSuccess <- runMaybeT $ do
               user <- hoistMaybe $ lookup "user" ps
               pass <- hoistMaybe $ lookup "password" ps
+              liftIO $ putStrLn $ "<~!~> Attempted Login: " ++ show user ++ ", " ++ show pass ++ "\n"
               nUserSess <- newUserSession
               lift $ writeUserSession nUserSess
               return $ Success nUserSess
@@ -131,12 +132,18 @@ main = do
         firstIs f (x:_) = f x
 
 
-    -- logoutRoute = "logout" </> o
-    -- logoutHandle
+    logoutRoute = "logout" </> o
+    logoutHandle = getReq $ \req -> do
+      resp <- case getUserSession $ requestHeaders req of
+        Nothing -> return "no session :s"
+        Just userSession -> do
+          lift $ deleteUserSession (userSessID userSession)
+          return "logged-out"
+      textWith clearSessionResponse resp
 
-    unauthHandle SessionNotInCache = get $ textStatus status401 "Unauthorized! - session not in cache"
-    unauthHandle SessionTimedOut = get $ textStatus status401 "Unauthorized! - session timed out"
-    unauthHandle SessionMismatch = get $ textStatus status401 "Unauthorized! - session mismatch"
-    unauthHandle InvalidRequestNonce = get $ textStatus status401 "Unauthorized! - you're doing something sneaky!"
-    unauthHandle NoSessionHeaders = get $ textStatus status401 "Unauthorized! - are you sure you're logged in?"
+    unauthHandle SessionNotInCache   = get $ textStatusWith clearSessionResponse status401 "Unauthorized! - session not in cache"
+    unauthHandle SessionTimedOut     = get $ textStatusWith clearSessionResponse status401 "Unauthorized! - session timed out"
+    unauthHandle SessionMismatch     = get $ textStatusWith clearSessionResponse status401 "Unauthorized! - session mismatch"
+    unauthHandle InvalidRequestNonce = get $ textStatusWith clearSessionResponse status401 "Unauthorized! - you're doing something sneaky!"
+    unauthHandle NoSessionHeaders    = get $ textStatusWith clearSessionResponse status401 "Unauthorized! - are you sure you're logged in?"
     notFoundHandle = get $ textStatus status404 "Not Found :("

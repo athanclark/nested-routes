@@ -3,6 +3,9 @@
   , DeriveTraversable
   , GeneralizedNewtypeDeriving
   , OverloadedStrings
+  , StandaloneDeriving
+  , FlexibleInstances
+  , MultiParamTypeClasses
   #-}
 
 
@@ -43,7 +46,8 @@ newtype FileExts a = FileExts { unFileExts :: Map FileExt a }
 
 newtype FileExtListenerT r m a =
   FileExtListenerT { runFileExtListenerT :: WriterT (FileExts r) m a }
-    deriving (Functor, Applicative, Monad, MonadIO, MonadTrans)
+    deriving (Functor, Applicative, Monad, MonadIO, MonadTrans,
+              MonadWriter (FileExts r))
 
 execFileExtListenerT :: Monad m => FileExtListenerT r m a -> m (FileExts r)
 execFileExtListenerT = execWriterT . runFileExtListenerT
