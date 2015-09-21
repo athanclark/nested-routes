@@ -21,21 +21,7 @@ parsers /directly/ in our routes, with our handlers
 reflecting their results. As an example:
 
 ```haskell
-
-```
-
-Please see the [Hackage Documentation](http://hackage.haskell.org/package/nested-routes)
-for more information.
-
-## Installation
-
-```bash
-cabal install nested-routes
-```
-
-## Contributing
-
-Fork, pull request, contact, repeat :)NGUAGE
+{-# LANGUAGE
     OverloadedStrings
   , ScopedTypeVariables
   , FlexibleContexts
@@ -117,3 +103,17 @@ main =
 
     unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
     notFoundHandle = get $ textStatus status404 "Not Found :("
+```
+
+Please see the [Hackage Documentation](http://hackage.haskell.org/package/nested-routes)
+for more information.
+
+## Installation
+
+```bash
+cabal install nested-routes
+```
+
+## Contributing
+
+Fork, pull request, contact, repeat :)
