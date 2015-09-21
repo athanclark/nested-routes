@@ -275,16 +275,13 @@ extractContent :: ( Functor m
                     -> MiddlewareT m
 extractContent hs app req respond = do
   (rtrie,_,_,_) <- execHandlerT hs
-  let mAcceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      fe = getFileExt req
-      v = getVerb req
   case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
     Nothing -> fromMaybe (app req respond) $ do
-      guard $ not $ null $ pathInfo req
+      guard $ not . null $ pathInfo req
       guard $ trimFileExt (last $ pathInfo req) == "index"
       found <- TC.lookup (init $ pathInfo req) rtrie
-      Just $ actionToMiddleware mAcceptBS fe v found app req respond
-    Just found -> actionToMiddleware mAcceptBS fe v found app req respond
+      Just $ actionToMiddleware found app req respond
+    Just found -> actionToMiddleware found app req respond
 
 
 -- | Manually fetch the security tokens / authorization roles affiliated with
@@ -312,11 +309,8 @@ extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
   ss <- extractAuthSym hs req
   ef <- runExceptT $ authorize req ss
-  let acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      fe = getFileExt req
-      v = getVerb req
   either (\e -> maybe (app req respond)
-                      (\action -> actionToMiddleware acceptBS fe v action app req respond)
+                      (\action -> actionToMiddleware action app req respond)
                     $ (getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie) <$~> e)
          (\f -> app req (respond . f))
          ef
@@ -342,11 +336,8 @@ extractNearestVia :: ( Functor m
                        -> MiddlewareT m
 extractNearestVia extr hs app req respond = do
   trie <- extr hs
-  let acceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
-      fe = getFileExt req
-      v = getVerb req
   maybe (app req respond)
-        (\action -> actionToMiddleware acceptBS fe v action app req respond)
+        (\action -> actionToMiddleware action app req respond)
       $ getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
 
 
@@ -355,17 +346,17 @@ extractNearestVia extr hs app req respond = do
 -- to lookup, returning the response and utilizing the upload handler encoded
 -- in the action.
 actionToMiddleware :: MonadIO m =>
-                      Maybe AcceptHeader -- @Accept@ header
-                   -> FileExt
-                   -> Verb
-                   -> ActionT u m ()
+                      ActionT u m ()
                    -> MiddlewareT m
-actionToMiddleware mAcceptBS f v found app req respond = do
+actionToMiddleware found app req respond = do
+  let mAcceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
+      fe = getFileExt req
+      v = getVerb req
   mApp <- runMaybeT $ do
     mContinue            <- lift $ lookupUpload v req found
     (reqbodyf, continue) <- hoistMaybe mContinue
     mUploadData          <- lift reqbodyf
-    mResponse            <- lift $ lookupResponse mAcceptBS f $ continue mUploadData
+    mResponse            <- lift $ lookupResponse mAcceptBS fe $ continue mUploadData
     response             <- hoistMaybe mResponse
     return $ liftIO $ respond response
   fromMaybe (app req respond) mApp
