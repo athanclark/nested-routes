@@ -21,27 +21,7 @@ parsers /directly/ in our routes, with our handlers
 reflecting their results. As an example:
 
 ```haskell
-router :: Application
-router = route handlers
-  where
-    handlers = do
-      handle o
-        (get $ text "home")
-        Nothing
-      handle ("foo" </> "bar")
-        (get $ text "foobar") $ Just $
-        handle (p ("baz", double) </> o)
-          (\d -> get $ text $ LT.pack (show d) <> " bazs")
-          Nothing
-      handle (p ("num",double) </> o)
-        (\d -> get $ text $ LT.pack $ show d) $ Just $ do
-        handle "bar"
-           (\d -> get $ do
-                    text $ (LT.pack $ show d) <> " bars")
-                    json $ (LT.pack $ show d) <> " bars!")
-           Nothing
-        handle (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o)
-           (\d e -> get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
+
 ```
 
 Please see the [Hackage Documentation](http://hackage.haskell.org/package/nested-routes)
@@ -55,4 +35,85 @@ cabal install nested-routes
 
 ## Contributing
 
-Fork, pull request, contact, repeat :)
+Fork, pull request, contact, repeat :)NGUAGE
+    OverloadedStrings
+  , ScopedTypeVariables
+  , FlexibleContexts
+  #-}
+
+
+module Main where
+
+import Network.Wai
+import Network.Wai.Handler.Warp
+import Network.HTTP.Types
+import Web.Routes.Nested
+import Data.Attoparsec.Text
+import Text.Regex
+import Data.Monoid
+import qualified Data.Text.Lazy as LT
+import Control.Monad.Error.Class
+import Control.Monad.IO.Class
+
+import Debug.Trace
+
+
+data AuthRole = AuthRole deriving (Show, Eq)
+data AuthErr = NeedsAuth deriving (Show, Eq)
+
+authorize :: ( Monad m
+             , MonadError AuthErr m
+             ) => Request -> [AuthRole] -> m (Response -> Response)                                                                                                     
+-- authorize _ _ = return id -- uncomment to force constant authorization                                                                                               
+authorize req ss | null ss   = return id                                                                                                                                
+                 | otherwise = throwError NeedsAuth
+
+defApp :: Application
+defApp _ respond = respond $ textOnlyStatus status404 "404 :("
+
+main :: IO ()
+main =
+  let app = routeAuth authorize routes
+      routes =
+        handle o (Just rootHandle) $ Just $ do
+          handle fooRoute (Just fooHandle) $ Just $ do
+            auth AuthRole unauthHandle ProtectChildren
+            handle barRoute    (Just barHandle)    Nothing
+            handle doubleRoute (Just doubleHandle) Nothing
+          handle emailRoute (Just emailHandle) Nothing
+          handle bazRoute (Just bazHandle) Nothing
+          notFound o (Just notFoundHandle) Nothing
+  in run 3000 $ app defApp
+  where
+    rootHandle = get $ text "Home"
+
+    -- `/foo`
+    fooRoute = l "foo" </> o
+    fooHandle = get $ text "foo!"
+
+    -- `/foo/bar`
+    barRoute = l "bar" </> o
+    barHandle = get $ do
+      text "bar!"
+      json ("json bar!" :: LT.Text)
+
+    -- `/foo/1234e12`
+    doubleRoute = p ("double", double) </> o
+    doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
+
+    -- `/athan@foo.com`
+    emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
+    emailHandle e = get $ text $ LT.pack (show e) <> " email"
+
+    -- `/baz`
+    bazRoute = l "baz" </> o
+    bazHandle = do
+      get $ text "baz!"
+      let uploader req = do liftIO $ print =<< strictRequestBody req
+                            return $ Just ()
+          uploadHandle Nothing = text "Upload Failed"
+          uploadHandle (Just ()) = text "Woah! Upload content!"
+      post uploader uploadHandle
+
+    unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
+    notFoundHandle = get $ textStatus status404 "Not Found :("
