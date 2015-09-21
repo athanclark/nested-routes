@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                5.1.0
+Version:                4.0.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -20,87 +20,9 @@ Description:
   <https://hackage.haskell.org/package/attoparsec Attoparsec>
   parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions>
   /directly/ in our routes, with our handlers
-  reflecting their results. You can find more information on the
+  reflecting their results. You can find more information in the
   <https://www.fpcomplete.com/user/AthanClark/nested-routes demo>.
-  .
-  As an example:
-  .
-  > router :: Application
-  > router = route handlers
-  >   where
-  >     handlers = do
-  >       handle o
-  >         (Just $ get $ text "home")
-  >         Nothing
-  >       handle ("foo" </> "bar")
-  >         (Just $ get $ text "foobar") $ Just $
-  >         handle (p ("baz", double) </> o)
-  >           (Just $ \d -> get $ text $ LT.pack (show d) <> " bazs")
-  >           Nothing
-  >       handle (p ("num",double) </> o)
-  >         (Just $ \d -> get $ text $ LT.pack $ show d) $ Just $ do
-  >         handle "bar"
-  >            (Just $ \d -> get $ do
-  >                     text $ (LT.pack $ show d) <> " bars")
-  >                     json $ (LT.pack $ show d) <> " bars!")
-  >            Nothing
-  >         handle (r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o)
-  >            (Just $ \d e -> get $ textOnly $ (LT.pack $ show d) <> " " <> (LT.pack $ show e)
-  .
-  The route specification syntax is a little strange right now - @l@ specifies
-  a "literal chunk" of a handlable url (ie - @l \"foo\" \<\/\> l \"bar\" \<\/\> o@ would
-  represent the url @\/foo\/bar@), while @p@ represents a "parsable" url chunk,
-  which expects a pair - the left element being merely a reference name for the
-  parser during internal plumbing, and the right being the actual @Parser@. @o@ represents
-  the end of a url string, and can be used alone in a handler to capture requests
-  to the root path.
-  .
-  Each route being handled needs some kind of content. For every parsed url chunk,
-  the route expects a function
-  of arity matching 1-for-1 with the parsed contents. For example, @\d -> ...@ in the
-  demonstration above is such a function, where @d :: Double@.
-  .
-  Internally, we match against both the file extension and Accept headers in the
-  HTTP request - the Accept header may override the file extension.
-  .
-  When we test our application:
-  .
-  >  λ> curl localhost:3000/ -H "Accept: text/plain, */*"
-  >  ↪ "home"
-  .
-  requests may end with index
-  .
-  >  λ> curl localhost:3000/index -H "Accept: text/plain, */*"
-  >  ↪ "home"
-  .
-  and specify the file extension
-  .
-  >  λ> curl localhost:3000/index.txt -H "Accept: text/plain, */*"
-  >  ↪ "home"
-  .
-  each responding with the "closest" available file type
-  .
-  >  λ> curl localhost:3000/index.html -H "Accept: text/html, */*"
-  >  ↪ "home"
-  .
-  >  λ> curl localhost:3000/foo/bar -H "Accept: text/plain, */*"
-  >  ↪ "foobar"
-  .
-  >  λ> curl localhost:3000/foo/bar.txt -H "Accept: text/plain, */*"
-  >  ↪ "foobar"
-  .
-  >  λ> curl localhost:3000/foo/bar/5678.5678 -H "Accept: text/plain, */*"
-  >  ↪ "5678.5678 bazs"
-  .
-  >  λ> curl localhost:3000/1234.1234 -H "Accept: text/plain, */*"
-  >  ↪ "1234.1234"
-  .
-  >  λ> curl localhost:3000/2e5 -H "Accept: text/plain, */*"
-  >  ↪ "200000.0"
-  .
-  >  λ> curl localhost:3000/1234.1234/bar -H "Accept: text/plain, */*"
-  >  ↪ "1234.1234 bars"
-
+  and the examples.
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
 
