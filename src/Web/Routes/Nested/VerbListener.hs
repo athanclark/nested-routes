@@ -17,28 +17,29 @@ import qualified Data.Map                             as Map
 import           Data.Set.Class                       as Sets
 import           Control.Monad.Trans
 import           Control.Monad.Writer
+import           Control.Monad.Except
 
 
 type Verb = StdMethod
 
-type HandleUpload m u   = Request -> m (Maybe u)
-type Respond u r        = Request -> Maybe u -> r
-type ResponseSpec u m r = (HandleUpload m u, Respond u r)
+type HandleUpload e m u   = Request -> ExceptT (Maybe e) m u
+type Respond e u r        = Request -> Either (Maybe e) u -> r
+type ResponseSpec e u m r = (HandleUpload e m u, Respond e u r)
 
 
 -- * Verb Map
 
-newtype Verbs u m r = Verbs
-  { unVerbs :: Map Verb (ResponseSpec u m r)
+newtype Verbs e u m r = Verbs
+  { unVerbs :: Map Verb (ResponseSpec e u m r)
   } deriving (Monoid, HasUnion, HasEmpty)
 
 -- | To compensate for responses that want to peek into the @Request@ object.
 supplyReq :: Request
-          -> Map Verb (ResponseSpec u m r)
-          -> Map Verb (m (Maybe u), Maybe u -> r)
+          -> Map Verb (ResponseSpec e u m r)
+          -> Map Verb (ExceptT (Maybe e) m u, Either (Maybe e) u -> r)
 supplyReq req xs = bimap ($ req) ($ req) <$> xs
 
-instance Functor (Verbs u m) where
+instance Functor (Verbs e u m) where
   fmap f (Verbs xs) = Verbs $ fmap (second (f .*)) xs
 
 -- instance Foldable (Verbs u m) where
@@ -49,20 +50,20 @@ instance Functor (Verbs u m) where
 
 -- * Verb Writer
 
-newtype VerbListenerT r u m a =
-  VerbListenerT { runVerbListenerT :: WriterT (Union (Verbs u m r)) m a }
+newtype VerbListenerT r e u m a =
+  VerbListenerT { runVerbListenerT :: WriterT (Union (Verbs e u m r)) m a }
     deriving ( Functor
              , Applicative
              , Monad
-             , MonadWriter (Union (Verbs u m r))
+             , MonadWriter (Union (Verbs e u m r))
              , MonadIO
              )
 
-execVerbListenerT :: Monad m => VerbListenerT r u m a -> m (Verbs u m r)
+execVerbListenerT :: Monad m => VerbListenerT r e u m a -> m (Verbs e u m r)
 execVerbListenerT verbs = do uVerbs <- execWriterT $ runVerbListenerT verbs
                              return $ unUnion uVerbs
 
-instance MonadTrans (VerbListenerT r u) where
+instance MonadTrans (VerbListenerT r e u) where
   lift ma = VerbListenerT $ lift ma
 
 
@@ -72,22 +73,22 @@ foldMWithKey f i = Map.foldlWithKey (\macc k a -> (\mer -> f mer k a) =<< macc) 
 
 -- | For simple @GET@ responses
 get :: ( Monad m
-       ) => r -> VerbListenerT r u m ()
-get r = tell $ Union $ Verbs $ Map.singleton GET ( const $ return Nothing
+       ) => r -> VerbListenerT r e u m ()
+get r = tell $ Union $ Verbs $ Map.singleton GET ( const $ throwError Nothing
                                                  , const $ const r
                                                  )
 
 -- | Inspect the @Request@ object supplied by WAI
 getReq :: ( Monad m
-          ) => (Request -> r) -> VerbListenerT r u m ()
-getReq r = tell $ Union $ Verbs $ Map.singleton GET ( const $ return Nothing
+          ) => (Request -> r) -> VerbListenerT r e u m ()
+getReq r = tell $ Union $ Verbs $ Map.singleton GET ( const $ throwError Nothing
                                                     , const . r)
 
 
 -- | For simple @POST@ responses
 post :: ( Monad m
         , MonadIO m
-        ) => HandleUpload m u -> (Maybe u -> r) -> VerbListenerT r u m ()
+        ) => HandleUpload e m u -> (Either (Maybe e) u -> r) -> VerbListenerT r e u m ()
 post handle r = tell $ Union $ Verbs $ Map.singleton POST ( handle
                                                           , const r
                                                           )
@@ -95,7 +96,7 @@ post handle r = tell $ Union $ Verbs $ Map.singleton POST ( handle
 -- | Inspect the @Request@ object supplied by WAI
 postReq :: ( Monad m
            , MonadIO m
-           ) => HandleUpload m u -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
+           ) => HandleUpload e m u -> Respond e u r -> VerbListenerT r e u m ()
 postReq handle r = tell $ Union $ Verbs $ Map.singleton POST ( handle
                                                              , r
                                                              )
@@ -104,7 +105,7 @@ postReq handle r = tell $ Union $ Verbs $ Map.singleton POST ( handle
 -- | For simple @PUT@ responses
 put :: ( Monad m
        , MonadIO m
-       ) => HandleUpload m u -> (Maybe u -> r) -> VerbListenerT r u m ()
+       ) => HandleUpload e m u -> (Either (Maybe e) u -> r) -> VerbListenerT r e u m ()
 put handle r = tell $ Union $ Verbs $ Map.singleton PUT ( handle
                                                         , const r
                                                         )
@@ -112,7 +113,7 @@ put handle r = tell $ Union $ Verbs $ Map.singleton PUT ( handle
 -- | Inspect the @Request@ object supplied by WAI
 putReq :: ( Monad m
           , MonadIO m
-          ) => HandleUpload m u -> (Request -> Maybe u -> r) -> VerbListenerT r u m ()
+          ) => HandleUpload e m u -> Respond e u r -> VerbListenerT r e u m ()
 putReq handle r = tell $ Union $ Verbs $ Map.singleton PUT ( handle
                                                            , r
                                                            )
@@ -120,14 +121,14 @@ putReq handle r = tell $ Union $ Verbs $ Map.singleton PUT ( handle
 
 -- | For simple @DELETE@ responses
 delete :: ( Monad m
-          ) => r -> VerbListenerT r u m ()
-delete r = tell $ Union $ Verbs $ Map.singleton DELETE ( const $ return Nothing
+          ) => r -> VerbListenerT r e u m ()
+delete r = tell $ Union $ Verbs $ Map.singleton DELETE ( const $ throwError Nothing
                                                        , const $ const r
                                                        )
 
 -- | Inspect the @Request@ object supplied by WAI
 deleteReq :: ( Monad m
-             ) => (Request -> r) -> VerbListenerT r u m ()
-deleteReq r = tell $ Union $ Verbs $ Map.singleton DELETE ( const $ return Nothing
+             ) => (Request -> r) -> VerbListenerT r e u m ()
+deleteReq r = tell $ Union $ Verbs $ Map.singleton DELETE ( const $ throwError Nothing
                                                           , const . r
                                                           )

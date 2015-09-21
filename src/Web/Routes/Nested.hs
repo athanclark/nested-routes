@@ -30,13 +30,15 @@ module Web.Routes.Nested
   -- * Entry Point
   , route
   , routeAuth
-  -- * Extraction
+  , routeMiddleware
+-- * Extraction
   , extractContent
   , extractNotFound
   , extractAuthSym
   , extractAuth
   , extractNearestVia
   -- * Utilities
+  , handlersToMiddlewares
   , actionToMiddleware
   , lookupVerb
   , lookupFileExt
@@ -89,7 +91,7 @@ type Tries x s e e' = ( RootedPredTrie T.Text x
                       , RootedPredTrie T.Text e
                       )
 
-newtype HandlerT x sec err errSym uploadSym m a = HandlerT
+newtype HandlerT x sec err errSym uploadSym uploadErr m a = HandlerT
   { runHandlerT :: WriterT (Tries x sec err errSym) m a }
   deriving ( Functor
            , Applicative
@@ -99,19 +101,19 @@ newtype HandlerT x sec err errSym uploadSym m a = HandlerT
            , MonadWriter (Tries x sec err errSym)
            )
 
-execHandlerT :: Monad m => HandlerT x sec err errSym uploadSym m a -> m (Tries x sec err errSym)
+execHandlerT :: Monad m => HandlerT x sec err errSym uploadSym uploadErr m a -> m (Tries x sec err errSym)
 execHandlerT = execWriterT . runHandlerT
 
-type ActionT u m a = VerbListenerT (FileExtListenerT Response m a) u m a
+type ActionT ue u m a = VerbListenerT (FileExtListenerT Response m a) ue u m a
 
-type RoutesT u s e m a = HandlerT (ActionT u m a) (s, AuthScope) (e -> ActionT u m a) e u m a
+type RoutesT ue u s e m a = HandlerT (ActionT ue u m a) (s, AuthScope) (e -> ActionT ue u m a) e u ue m a
 
 -- | For routes ending with a literal.
 handle :: ( Monad m
           , Functor m
           , cleanxs ~ CatMaybes xs
-          , HasResult childContent (ActionT u m ())
-          , HasResult childErr     (e -> ActionT u m ())
+          , HasResult childContent (ActionT ue u m ())
+          , HasResult childErr     (e -> ActionT ue u m ())
           , ExpectArity cleanxs childContent
           , ExpectArity cleanxs childSec
           , ExpectArity cleanxs childErr
@@ -135,8 +137,8 @@ handle :: ( Monad m
           , childErr ~ TypeListToArity cleanxs resultErr
           ) => UrlChunks xs
             -> Maybe childContent
-            -> Maybe (HandlerT childContent  childSec  childErr  e u m ())
-            ->        HandlerT resultContent resultSec resultErr e u m ()
+            -> Maybe (HandlerT childContent  childSec  childErr  e u ue m ())
+            ->        HandlerT resultContent resultSec resultErr e u ue m ()
 handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
   (RootedPredTrie _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
@@ -169,8 +171,8 @@ parent :: ( Monad m
           , childSec ~ TypeListToArity cleanxs resultSec
           , childErr ~ TypeListToArity cleanxs resultErr
           ) => UrlChunks xs
-            -> HandlerT childContent  childSec  childErr  e u m ()
-            -> HandlerT resultContent resultSec resultErr e u m ()
+            -> HandlerT childContent  childSec  childErr  e u ue m ()
+            -> HandlerT resultContent resultSec resultErr e u ue m ()
 parent ts cs = do
   (trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
   tell ( extrude ts trieContent
@@ -189,7 +191,7 @@ auth :: ( Monad m
         ) => sec
           -> err
           -> AuthScope
-          -> HandlerT content (sec, AuthScope) err e u m ()
+          -> HandlerT content (sec, AuthScope) err e u ue m ()
 auth token handleFail scope =
   tell ( mempty
        , mempty
@@ -201,8 +203,8 @@ auth token handleFail scope =
 notFound :: ( Monad m
             , Functor m
             , cleanxs ~ CatMaybes xs
-            , HasResult childContent (ActionT u m ())
-            , HasResult childErr     (e -> ActionT u m ())
+            , HasResult childContent (ActionT ue u m ())
+            , HasResult childErr     (e -> ActionT ue u m ())
             , ExpectArity cleanxs childContent
             , ExpectArity cleanxs childSec
             , ExpectArity cleanxs childErr
@@ -226,8 +228,8 @@ notFound :: ( Monad m
             , childErr ~ TypeListToArity cleanxs resultErr
             ) => UrlChunks xs
               -> Maybe childContent
-              -> Maybe (HandlerT childContent  childSec  childErr  e u m ())
-              ->        HandlerT resultContent resultSec resultErr e u m ()
+              -> Maybe (HandlerT childContent  childSec  childErr  e u ue m ())
+              ->        HandlerT resultContent resultSec resultErr e u ue m ()
 notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
   (trieContent,RootedPredTrie _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
@@ -251,7 +253,7 @@ type AcceptHeader = B.ByteString
 route :: ( Functor m
          , Monad m
          , MonadIO m
-         ) => HandlerT (ActionT u m ()) sec err e u m a -- ^ Assembled @handle@ calls
+         ) => HandlerT (ActionT ue u m ()) sec err e u ue m a -- ^ Assembled @handle@ calls
            -> MiddlewareT m
 route hs = extractContent hs . extractNotFound hs
 
@@ -263,15 +265,37 @@ routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
-               -> RoutesT u sec e m () -- ^ Assembled @handle@ calls
+               -> RoutesT ue u sec e m () -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
+
+routeMiddleware :: ( MonadIO m
+                   ) => HandlerT (MiddlewareT m) sec (e -> MiddlewareT m) e u ue m a
+                     -> MiddlewareT m
+routeMiddleware hs app req respond = do
+  (rtrie,_,_,_) <- execHandlerT hs
+  case lookupWithLRPT trimFileExt (pathInfo req) rtrie of
+    Nothing -> app req respond
+    Just m -> m app req respond
+
+
+handlersToMiddlewares :: MonadIO m =>
+                         HandlerT (ActionT ue u m ()) sec (e -> ActionT ue u m ()) e u ue m ()
+                      -> HandlerT (MiddlewareT m) sec (e -> MiddlewareT m) e u ue m ()
+handlersToMiddlewares hs = do
+  (rtrie,nftrie,strie,errtrie) <- lift $ execHandlerT hs
+  tell ( actionToMiddleware <$> rtrie
+       , actionToMiddleware <$> nftrie
+       , strie
+       , (actionToMiddleware .) <$> errtrie
+       )
+
 
 -- | Turn the trie carrying the main content into a middleware.
 extractContent :: ( Functor m
                   , Monad m
                   , MonadIO m
-                  ) => HandlerT (ActionT u m ()) sec err e u m a -- ^ Assembled @handle@ calls
+                  ) => HandlerT (ActionT ue u m ()) sec err e u ue m a -- ^ Assembled @handle@ calls
                     -> MiddlewareT m
 extractContent hs app req respond = do
   (rtrie,_,_,_) <- execHandlerT hs
@@ -288,7 +312,7 @@ extractContent hs app req respond = do
 -- a request and your routing system.
 extractAuthSym :: ( Functor m
                   , Monad m
-                  ) => HandlerT x (sec, AuthScope) err e u m a
+                  ) => HandlerT x (sec, AuthScope) err e u ue m a
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
@@ -303,7 +327,7 @@ extractAuth :: ( Functor m
                    , Monad m
                    , MonadIO m
                    ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
-                     -> HandlerT x (sec, AuthScope) (e -> ActionT u m ()) e u m a
+                     -> HandlerT x (sec, AuthScope) (e -> ActionT ue u m ()) e u ue m a
                      -> MiddlewareT m
 extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
@@ -321,7 +345,7 @@ extractAuth authorize hs app req respond = do
 extractNotFound :: ( Functor m
                    , Monad m
                    , MonadIO m
-                   ) => HandlerT (ActionT u m ()) sec err e u m a
+                   ) => HandlerT (ActionT ue u m ()) sec err e u ue m a
                      -> MiddlewareT m
 extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
 
@@ -331,8 +355,8 @@ extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
 extractNearestVia :: ( Functor m
                      , Monad m
                      , MonadIO m
-                     ) => (HandlerT (ActionT u m ()) sec err e u m a -> m (RootedPredTrie T.Text (ActionT u m ())))
-                       -> HandlerT (ActionT u m ()) sec err e u m a
+                     ) => (HandlerT (ActionT ue u m ()) sec err e u ue m a -> m (RootedPredTrie T.Text (ActionT ue u m ())))
+                       -> HandlerT (ActionT ue u m ()) sec err e u ue m a
                        -> MiddlewareT m
 extractNearestVia extr hs app req respond = do
   trie <- extr hs
@@ -341,12 +365,15 @@ extractNearestVia extr hs app req respond = do
       $ getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
 
 
+getResultsFromMatch :: ([s],a,[s]) -> a
+getResultsFromMatch (_,x,_) = x
+
 
 -- | Turn an @ActionT@ into a @Middleware@ by providing a @FileExt@ and @Verb@
 -- to lookup, returning the response and utilizing the upload handler encoded
 -- in the action.
 actionToMiddleware :: MonadIO m =>
-                      ActionT u m ()
+                      ActionT ue u m ()
                    -> MiddlewareT m
 actionToMiddleware found app req respond = do
   let mAcceptBS = Prelude.lookup ("Accept" :: HeaderName) $ requestHeaders req
@@ -355,7 +382,7 @@ actionToMiddleware found app req respond = do
   mApp <- runMaybeT $ do
     mContinue            <- lift $ lookupUpload v req found
     (reqbodyf, continue) <- hoistMaybe mContinue
-    mUploadData          <- lift reqbodyf
+    mUploadData          <- lift $ runExceptT reqbodyf
     mResponse            <- lift $ lookupResponse mAcceptBS fe $ continue mUploadData
     response             <- hoistMaybe mResponse
     return $ liftIO $ respond response
@@ -365,8 +392,8 @@ actionToMiddleware found app req respond = do
 lookupUpload :: Monad m =>
                 Verb
              -> Request
-             -> VerbListenerT r u m ()
-             -> m (Maybe (m (Maybe u), Maybe u -> r))
+             -> VerbListenerT r ue u m ()
+             -> m (Maybe (ExceptT (Maybe ue) m u, Either (Maybe ue) u -> r))
 lookupUpload v req action = runMaybeT $ do
   vmap <- lift $ execVerbListenerT action
   hoistMaybe $ lookupVerb v req vmap
@@ -381,7 +408,7 @@ lookupResponse mAcceptBS f fexts = runMaybeT $ do
   hoistMaybe $ lookupFileExt mAcceptBS f femap
 
 
-lookupVerb :: Verb -> Request -> Verbs u m r -> Maybe (m (Maybe u), Maybe u -> r)
+lookupVerb :: Verb -> Request -> Verbs ue u m r -> Maybe (ExceptT (Maybe ue) m u, Either (Maybe ue) u -> r)
 lookupVerb v req vmap = Map.lookup v $ supplyReq req $ unVerbs vmap
 
 
@@ -476,6 +503,3 @@ lookupWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
 lookupWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe a
 lookupWithLRPT _ [] (RootedPredTrie mx _) = mx
 lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (NE.fromList ts) xs
-
-getResultsFromMatch :: ([s],a,[s]) -> a
-getResultsFromMatch (_,x,_) = x
