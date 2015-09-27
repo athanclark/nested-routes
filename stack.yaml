@@ -8,4 +8,8 @@ extra-deps:
   - pred-trie-0.3.0
   - wai-util-0.8
   - http-accept-0.2
+  - poly-arity-0.0.7
+  - wai-transformers-0.0.1
+  - wai-middleware-content-type-0.0.2
+  - wai-middleware-verbs-0.0.4
 resolver: nightly-2015-09-18
