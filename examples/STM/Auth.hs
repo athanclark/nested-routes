@@ -5,7 +5,7 @@
 
 module STM.Auth where
 
-import Network.Wai
+import Network.Wai.Trans
 import Network.Wai.Handler.Warp
 import Network.Wai.Session
 import Network.HTTP.Types
