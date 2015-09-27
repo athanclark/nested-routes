@@ -44,114 +44,52 @@ Library
                         Web.Routes.Nested.Types
                         Web.Routes.Nested.Types.UrlChunks
   Build-Depends:        base >= 4.6 && < 5
-                      , aeson
                       , attoparsec
-                      , bifunctors
-                      , blaze-html
                       , bytestring
-                      , clay
-                      , composition
                       , composition-extra >= 2.0.0
-                      , constraints
                       , containers
-                      , errors
-                      , http-media
-                      , http-types
-                      , lucid
                       , mtl
                       , poly-arity >= 0.0.7
                       , pred-trie >= 0.3
                       , regex-compat
                       , semigroups
-                      , sets >= 0.0.5
-                      , shakespeare
                       , text
                       , transformers
                       , tries
-                      , wai
-                      , wai-extra
                       , wai-transformers
-                      , wai-util
                       , wai-middleware-content-type >= 0.0.2
                       , wai-middleware-verbs >= 0.0.4
-                      , witherable
 
--- Test-Suite spec
---   Type:                 exitcode-stdio-1.0
---   Default-Language:     Haskell2010
---   Hs-Source-Dirs:       src
---                       , test
---   Ghc-Options:          -Wall
---   Main-Is:              Spec.hs
---   Build-Depends:        base
---                       , hspec
---                       , hspec-wai
---                       , shakespeare
---                       , lucid
---                       , attoparsec
---                       , regex-compat
---                       , containers
---                       , composition
---                       , composition-extra
---                       , semigroups
---                       , text
---                       , aeson
---                       , wai-util
---                       , blaze-html
---                       , bytestring
---                       , poly-arity
---                       , witherable
---                       , constraints
---                       , pred-trie
---                       , mtl
---                       , wai
---                       , warp
---                       , transformers
---                       , http-media
---                       , http-types
---                       , sets
---                       , errors
--- 
--- 
--- Executable example
---   if flag(Example)
---     Buildable: True
---   else
---     Buildable: False
---   Default-Language:     Haskell2010
---   HS-Source-Dirs:       src
---                       , examples
---   GHC-Options:          -Wall
---   Main-Is:              Main.hs
---   Build-Depends:        base
---                       , wai
---                       , wai-extra
---                       , wai-util
---                       , warp
---                       , http-types
---                       , http-media
---                       , mtl
---                       , transformers
---                       , witherable
---                       , composition
---                       , composition-extra
---                       , semigroups
---                       , constraints
---                       , containers
---                       , text
---                       , aeson
---                       , blaze-html
---                       , lucid
---                       , shakespeare
---                       , clay
---                       , bytestring
---                       , attoparsec
---                       , regex-compat
---                       , pred-trie
---                       , tries
---                       , poly-arity
---                       , sets
---                       , errors
+Executable example
+  if flag(Example)
+    Buildable: True
+  else
+    Buildable: False
+  Default-Language:     Haskell2010
+  HS-Source-Dirs:       src
+                      , examples
+  GHC-Options:          -Wall
+  Main-Is:              Main.hs
+  Build-Depends:        base
+                      , nested-routes
+                      , attoparsec
+                      , bytestring
+                      , composition-extra
+                      , containers
+                      , http-types
+                      , mtl
+                      , poly-arity
+                      , pred-trie
+                      , regex-compat
+                      , semigroups
+                      , text
+                      , transformers
+                      , tries
+                      , wai-transformers
+                      , wai-middleware-content-type
+                      , wai-middleware-verbs
+                      , warp
+
 -- 
 -- Executable example-stm
 --   if flag(Example-STM)

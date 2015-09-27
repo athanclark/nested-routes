@@ -72,6 +72,8 @@ import           Control.Monad.Trans.Except
 import           Control.Monad.Writer
 import qualified Control.Monad.State                as S
 
+import Debug.Trace
+
 
 type Tries x s e = ( RootedPredTrie T.Text x
                    , RootedPredTrie T.Text x
@@ -366,11 +368,11 @@ extractAuthSym hs req = do
 
 -- | Extracts only the security handling logic into a @MiddlewareT@.
 extractAuth :: ( Functor m
-                   , Monad m
-                   , MonadIO m
-                   ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
-                     -> HandlerT x (sec, AuthScope) (e -> MiddlewareT m) aux m a
-                     -> MiddlewareT m
+               , Monad m
+               , MonadIO m
+               ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
+                 -> HandlerT x (sec, AuthScope) (e -> MiddlewareT m) aux m a
+                 -> MiddlewareT m
 extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
   ss <- extractAuthSym hs req
