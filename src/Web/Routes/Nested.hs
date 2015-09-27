@@ -1,7 +1,6 @@
 {-# LANGUAGE
     GADTs
   , PolyKinds
-  , Rank2Types
   , TypeFamilies
   , DeriveFunctor
   , TypeOperators
@@ -21,7 +20,8 @@ module Web.Routes.Nested
   , HandlerT (..)
   , execHandlerT
   , ActionT
-  , RoutesT
+  , RoutableT
+  , RoutableActionT
   , AuthScope (..)
   , ExtrudeSound
   -- * Combinators
@@ -46,14 +46,22 @@ module Web.Routes.Nested
   , actionToMiddleware
   ) where
 
-import           Web.Routes.Nested.Types as X
-import           Network.Wai.Trans
-import           Network.Wai.Middleware.Verbs
-import           Network.Wai.Middleware.ContentType
+import           Web.Routes.Nested.Types            as X
+import           Network.Wai.Trans                  as X
+import           Network.Wai.Middleware.Verbs       as X
+import           Network.Wai.Middleware.ContentType as X
 
-import           Data.Trie.Pred                     (RootedPredTrie (..))
+import           Data.Trie.Pred                     (RootedPredTrie (..), PredTrie (..))
 import qualified Data.Trie.Pred                     as PT -- only using lookups
+import           Data.Trie.Pred.Step                (PredStep (..), PredSteps (..))
+import qualified Data.Trie.Class                    as TC
+import           Data.Trie.Map                      (MapStep (..))
+import qualified Data.Map                           as Map
+import           Data.List.NonEmpty                 (NonEmpty (..))
+import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
+import           Data.Maybe                         (fromMaybe)
+import           Data.Foldable
 import           Data.Functor.Syntax
 import           Data.Function.Poly
 
@@ -62,6 +70,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Except
 import           Control.Monad.Writer
+import qualified Control.Monad.State                as S
 
 
 type Tries x s e = ( RootedPredTrie T.Text x
@@ -89,10 +98,13 @@ action :: MonadIO m => ActionT e u m () -> MiddlewareT m
 action xs = verbsToMiddleware $ mapVerbs fileExtsToMiddleware xs
 
 
-type RoutesT s e u ue m a =
-  HandlerT (ActionT ue u m a) (s, AuthScope) (e -> ActionT ue u m a) (e,u,ue) m a
+type RoutableT s e u ue m a =
+  HandlerT (MiddlewareT m) (s, AuthScope) (e -> MiddlewareT m) (e,u,ue) m a
 
-type ExtrudeSound xs c r = forall cleanxs.
+type RoutableActionT s e u ue m a =
+  HandlerT (ActionT ue u m ()) (s, AuthScope) (e -> ActionT ue u m ()) (e,u,ue) m a
+
+type ExtrudeSound cleanxs xs c r =
   ( cleanxs ~ CatMaybes xs
   , ArityTypeListIso c cleanxs r
   , Extrude (UrlChunks xs)
@@ -114,9 +126,9 @@ handleAction :: ( Monad m
                 , Singleton (UrlChunks xs)
                     childContent
                     (RootedPredTrie T.Text resultContent)
-                , ExtrudeSound xs childContent resultContent
-                , ExtrudeSound xs childSec     resultSec
-                , ExtrudeSound xs childErr     resultErr
+                , ExtrudeSound cleanxs xs childContent resultContent
+                , ExtrudeSound cleanxs xs childSec     resultSec
+                , ExtrudeSound cleanxs xs childErr     resultErr
                 ) => UrlChunks xs
                   -> Maybe childContent
                   -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -143,9 +155,9 @@ handle :: ( Monad m
           , Singleton (UrlChunks xs)
               childContent
               (RootedPredTrie T.Text resultContent)
-          , ExtrudeSound xs childContent resultContent
-          , ExtrudeSound xs childSec     resultSec
-          , ExtrudeSound xs childErr     resultErr
+          , ExtrudeSound cleanxs xs childContent resultContent
+          , ExtrudeSound cleanxs xs childSec     resultSec
+          , ExtrudeSound cleanxs xs childErr     resultErr
           ) => UrlChunks xs
             -> Maybe childContent
             -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -167,9 +179,9 @@ parent :: ( Monad m
           , Singleton (UrlChunks xs)
               childContent
               (RootedPredTrie T.Text resultContent)
-          , ExtrudeSound xs childContent resultContent
-          , ExtrudeSound xs childSec     resultSec
-          , ExtrudeSound xs childErr     resultErr
+          , ExtrudeSound cleanxs xs childContent resultContent
+          , ExtrudeSound cleanxs xs childSec     resultSec
+          , ExtrudeSound cleanxs xs childErr     resultErr
           ) => UrlChunks xs
             -> HandlerT childContent  childSec  childErr  aux m ()
             -> HandlerT resultContent resultSec resultErr aux m ()
@@ -217,9 +229,9 @@ notFoundAction :: ( Monad m
                   , Singleton (UrlChunks xs)
                       childContent
                       (RootedPredTrie T.Text resultContent)
-                  , ExtrudeSound xs childContent resultContent
-                  , ExtrudeSound xs childSec     resultSec
-                  , ExtrudeSound xs childErr     resultErr
+                  , ExtrudeSound cleanxs xs childContent resultContent
+                  , ExtrudeSound cleanxs xs childSec     resultSec
+                  , ExtrudeSound cleanxs xs childErr     resultErr
                   ) => UrlChunks xs
                     -> Maybe childContent
                     -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -246,9 +258,9 @@ notFound :: ( Monad m
             , Singleton (UrlChunks xs)
                 childContent
                 (RootedPredTrie T.Text resultContent)
-            , ExtrudeSound xs childContent resultContent
-            , ExtrudeSound xs childSec     resultSec
-            , ExtrudeSound xs childErr     resultErr
+            , ExtrudeSound cleanxs xs childContent resultContent
+            , ExtrudeSound cleanxs xs childSec     resultSec
+            , ExtrudeSound cleanxs xs childErr     resultErr
             ) => UrlChunks xs
               -> Maybe childContent
               -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -282,7 +294,7 @@ routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
              ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
-               -> HandlerT (MiddlewareT m) (sec, AuthScope) (e -> MiddlewareT m) aux m () -- ^ Assembled @handle@ calls
+               -> RoutableT sec e u ue m () -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
 
@@ -291,7 +303,7 @@ routeAuth authorize hs = extractAuth authorize hs . route hs
 routeAction :: ( Functor m
                , Monad m
                , MonadIO m
-               ) => HandlerT (ActionT ue u m ()) sec (e -> ActionT ue u m ()) (e,u,ue) m ()
+               ) => RoutableActionT sec e u ue m ()
                  -> MiddlewareT m
 routeAction = route . actionToMiddleware
 
@@ -300,15 +312,15 @@ routeActionAuth :: ( Functor m
                    , Monad m
                    , MonadIO m
                    ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
-                     -> RoutesT sec e u ue m () -- ^ Assembled @handle@ calls
+                     -> RoutableActionT sec e u ue m () -- ^ Assembled @handle@ calls
                      -> MiddlewareT m
 routeActionAuth authorize = routeAuth authorize . actionToMiddleware
 
 
 -- | Turns a @HandlerT@ containing @ActionT@s into a @HandlerT@ containing @MiddlewareT@s.
 actionToMiddleware :: MonadIO m =>
-                      HandlerT (ActionT ue u m ()) sec (e -> ActionT ue u m ()) (e,u,ue) m ()
-                   -> HandlerT (MiddlewareT m) sec (e -> MiddlewareT m) (e,u,ue) m ()
+                      RoutableActionT sec e u ue m ()
+                   -> RoutableT sec e u ue m ()
 actionToMiddleware hs = do
   (rtrie,nftrie,strie,errtrie) <- lift $ execHandlerT hs
   tell ( action <$> rtrie
@@ -329,10 +341,13 @@ extractContent :: ( Functor m
                     -> MiddlewareT m
 extractContent hs app req respond = do
   (trie,_,_,_) <- execHandlerT hs
-  maybe (app req respond)
-        (\mid -> mid app req respond)
-      $ getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
- -- TODO: Figure out how content logic should work
+  case lookupWithLRPT trimFileExt (pathInfo req) trie of
+    Nothing -> fromMaybe (app req respond) $ do
+      guard $ not . null $ pathInfo req
+      guard $ trimFileExt (last $ pathInfo req) == "index"
+      mid <- TC.lookup (init $ pathInfo req) trie
+      Just $    mid app req respond
+    Just mid -> mid app req respond
 
 
 -- | Find the security tokens / authorization roles affiliated with
@@ -347,7 +362,7 @@ extractAuthSym hs req = do
   return $ foldl go [] (PT.matchesRPT (pathInfo req) trie)
   where
     go ys (_,(_,ProtectChildren),[]) = ys
-    go ys (_,(x,_),_) = ys ++ [x]
+    go ys (_,(x,_              ),_ ) = ys ++ [x]
 
 -- | Extracts only the security handling logic into a @MiddlewareT@.
 extractAuth :: ( Functor m
@@ -393,3 +408,52 @@ extractNearestVia extr hs app req respond = do
 getResultsFromMatch :: ([s],a,[s]) -> a
 getResultsFromMatch (_,x,_) = x
 
+
+
+-- * Pred-Trie related -----------------
+
+-- | Removes @.txt@ from @foo.txt@
+trimFileExt :: T.Text -> T.Text
+trimFileExt s =
+  let lastExt = getLastExt (T.unpack s)
+  in if lastExt `elem` possibleExts
+     then T.pack lastExt
+     else s
+  where
+    possibleExts = [ ".html",".htm",".txt",".json",".lucid"
+                   , ".julius",".css",".cassius",".lucius"
+                   ]
+    getLastExt ts = S.evalState (foldrM go [] ts) False
+      where
+        go c soFar = do
+          sawPeriod <- S.get
+          if sawPeriod
+          then return soFar
+          else if c == '.'
+               then do S.put True
+                       return ('.' : soFar)
+               else    return (c : soFar)
+
+
+-- | A quirky function for processing the last element of a lookup path, only
+-- on /literal/ matches.
+lookupWithLPT :: Ord s => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe a
+lookupWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
+  | null ts   = getFirst $ First (goLit (f t) ls) <> foldMap (First . goPred) ps
+  | otherwise = getFirst $ First (goLit    t  ls) <> foldMap (First . goPred) ps
+  where
+    goLit t' xs = do
+      (mx,mxs) <- Map.lookup t' xs
+      if null ts
+      then mx
+      else lookupWithLPT f (NE.fromList ts) =<< mxs
+
+    goPred (PredStep _ predicate mx xs) = do
+      d <- predicate t
+      if null ts
+      then mx <$~> d
+      else lookupWithLPT f (NE.fromList ts) xs <$~> d
+
+lookupWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe a
+lookupWithLRPT _ [] (RootedPredTrie mx _) = mx
+lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (NE.fromList ts) xs
