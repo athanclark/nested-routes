@@ -57,13 +57,13 @@ Library
                       , transformers
                       , tries
                       , wai-transformers
-                      , wai-middleware-content-type >= 0.0.2
+                      , wai-middleware-content-type >= 0.0.3
                       , wai-middleware-verbs >= 0.0.4
 
 
 Test-Suite test
   Type:                exitcode-stdio-1.0
-  Default-Languag:     Haskell2010
+  Default-Language:     Haskell2010
   HS-Source-Dirs:       src
                       , test
   GHC-Options:          -Wall -threaded

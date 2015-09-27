@@ -61,6 +61,7 @@ import           Data.List.NonEmpty                 (NonEmpty (..))
 import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
 import           Data.Maybe                         (fromMaybe)
+import           Data.Monoid
 import           Data.Foldable
 import           Data.Functor.Syntax
 import           Data.Function.Poly
@@ -69,7 +70,6 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Except
-import           Control.Monad.Writer
 import qualified Control.Monad.State                as S
 
 
@@ -80,20 +80,22 @@ type Tries x s e = ( RootedPredTrie T.Text x
                    )
 
 newtype HandlerT x sec err aux m a = HandlerT
-  { runHandlerT :: WriterT (Tries x sec err) m a }
+  { runHandlerT :: S.StateT (Tries x sec err) m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadIO
            , MonadTrans
-           , MonadWriter (Tries x sec err)
+           , S.MonadState (Tries x sec err)
            )
 
 execHandlerT :: Monad m => HandlerT x sec err aux m a -> m (Tries x sec err)
-execHandlerT = execWriterT . runHandlerT
+execHandlerT hs = S.execStateT (runHandlerT hs) mempty
 
 type ActionT e u m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) e u m a
 
+-- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
+-- route sets cooperate with the content-type and verb combinators.
 action :: MonadIO m => ActionT e u m () -> MiddlewareT m
 action xs = verbsToMiddleware $ mapVerbs fileExtsToMiddleware xs
 
@@ -133,14 +135,14 @@ handleAction :: ( Monad m
                   -> Maybe childContent
                   -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
                   ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-handleAction ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
+handleAction ts (Just vl) Nothing = tell' (singleton ts vl, mempty, mempty, mempty)
 handleAction ts mvl (Just cs) = do
   (RootedPredTrie _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell ( extrude ts $ RootedPredTrie mvl trieContent
-       , extrude ts trieNotFound
-       , extrude ts trieSec
-       , extrude ts trieErr
-       )
+  tell' ( extrude ts $ RootedPredTrie mvl trieContent
+        , extrude ts trieNotFound
+        , extrude ts trieSec
+        , extrude ts trieErr
+        )
 handleAction _ Nothing Nothing = return ()
 
 -- | Embed a @MiddlewareT@ into a set of routes.
@@ -162,14 +164,14 @@ handle :: ( Monad m
             -> Maybe childContent
             -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
             ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-handle ts (Just vl) Nothing = tell (singleton ts vl, mempty, mempty, mempty)
+handle ts (Just vl) Nothing = tell' (singleton ts vl, mempty, mempty, mempty)
 handle ts mvl (Just cs) = do
   (RootedPredTrie _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell ( extrude ts $ RootedPredTrie mvl trieContent
-       , extrude ts trieNotFound
-       , extrude ts trieSec
-       , extrude ts trieErr
-       )
+  tell' ( extrude ts $ RootedPredTrie mvl trieContent
+        , extrude ts trieNotFound
+        , extrude ts trieSec
+        , extrude ts trieErr
+        )
 handle _ Nothing Nothing = return ()
 
 -- | Prepend a path to an existing set of routes.
@@ -187,11 +189,11 @@ parent :: ( Monad m
             -> HandlerT resultContent resultSec resultErr aux m ()
 parent ts cs = do
   (trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell ( extrude ts trieContent
-       , extrude ts trieNotFound
-       , extrude ts trieSec
-       , extrude ts trieErr
-       )
+  tell' ( extrude ts trieContent
+        , extrude ts trieNotFound
+        , extrude ts trieSec
+        , extrude ts trieErr
+        )
 
 
 -- | Designate the scope of security to the set of routes - either only the adjacent
@@ -209,11 +211,11 @@ auth :: ( Monad m
           -> AuthScope
           -> HandlerT content (sec, AuthScope) err aux m ()
 auth token handleFail scope =
-  tell ( mempty
-       , mempty
-       , RootedPredTrie (Just (token,scope)) mempty
-       , RootedPredTrie (Just handleFail) mempty
-       )
+  tell' ( mempty
+        , mempty
+        , RootedPredTrie (Just (token,scope)) mempty
+        , RootedPredTrie (Just handleFail) mempty
+        )
 
 
 -- | Embed an @ActionT@ as a not-found handler into a set of routes, without first converting
@@ -236,14 +238,14 @@ notFoundAction :: ( Monad m
                     -> Maybe childContent
                     -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
                     ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-notFoundAction ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
+notFoundAction ts (Just vl) Nothing = tell' (mempty, singleton ts vl, mempty, mempty)
 notFoundAction ts mvl (Just cs) = do
   (trieContent,RootedPredTrie _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell ( extrude ts trieContent
-       , extrude ts $ RootedPredTrie mvl trieNotFound
-       , extrude ts trieSec
-       , extrude ts trieErr
-       )
+  tell' ( extrude ts trieContent
+        , extrude ts $ RootedPredTrie mvl trieNotFound
+        , extrude ts trieSec
+        , extrude ts trieErr
+        )
 notFoundAction _ Nothing Nothing = return ()
 
 -- | Embed a @MiddlewareT@ as a not-found handler into a set of routes.
@@ -265,14 +267,14 @@ notFound :: ( Monad m
               -> Maybe childContent
               -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
               ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-notFound ts (Just vl) Nothing = tell (mempty, singleton ts vl, mempty, mempty)
+notFound ts (Just vl) Nothing = tell' (mempty, singleton ts vl, mempty, mempty)
 notFound ts mvl (Just cs) = do
   (trieContent,RootedPredTrie _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell ( extrude ts trieContent
-       , extrude ts $ RootedPredTrie mvl trieNotFound
-       , extrude ts trieSec
-       , extrude ts trieErr
-       )
+  tell' ( extrude ts trieContent
+        , extrude ts $ RootedPredTrie mvl trieNotFound
+        , extrude ts trieSec
+        , extrude ts trieErr
+        )
 notFound _ Nothing Nothing = return ()
 
 
@@ -323,11 +325,11 @@ actionToMiddleware :: MonadIO m =>
                    -> RoutableT sec e u ue m ()
 actionToMiddleware hs = do
   (rtrie,nftrie,strie,errtrie) <- lift $ execHandlerT hs
-  tell ( action <$> rtrie
-       , action <$> nftrie
-       , strie
-       , (action .) <$> errtrie
-       )
+  tell' ( action <$> rtrie
+        , action <$> nftrie
+        , strie
+        , (action .) <$> errtrie
+        )
 
 
 -- * Extraction -------------------------------
@@ -457,3 +459,8 @@ lookupWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
 lookupWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe a
 lookupWithLRPT _ [] (RootedPredTrie mx _) = mx
 lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (NE.fromList ts) xs
+
+tell' :: (Monoid w, S.MonadState w m) => w -> m ()
+tell' x = do
+  xs <- S.get
+  S.put $ xs <> x
