@@ -69,6 +69,8 @@ Test-Suite test
   GHC-Options:          -Wall -threaded
   Main-Is:              Test.hs
   Other-Modules:        Spec
+                        Web.Routes.NestedSpec
+                        Web.Routes.NestedSpec.Basic
                         Web.Routes.Nested
                         Web.Routes.Nested.Types
                         Web.Routes.Nested.Types.UrlChunks

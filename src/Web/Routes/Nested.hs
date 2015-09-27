@@ -10,7 +10,6 @@
   , FlexibleContexts
   , OverloadedStrings
   , ScopedTypeVariables
-  , UndecidableInstances
   , GeneralizedNewtypeDeriving
   #-}
 
