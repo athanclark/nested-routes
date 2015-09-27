@@ -20,13 +20,17 @@ data EitherUrlChunk (x :: Maybe *) where
   (:~) :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
   (:*) :: (T.Text, Regex)    -> EitherUrlChunk ('Just [String])
 
--- | Match against a /Literal/ chunk
-l :: T.Text -> EitherUrlChunk 'Nothing
-l = (:=)
-
 -- | Use raw strings instead of prepending @l@
 instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
   fromString = l . T.pack
+
+-- | The /Origin/ chunk - the equivalent to @[]@
+o :: UrlChunks '[]
+o = Root
+
+-- | Match against a /Literal/ chunk
+l :: T.Text -> EitherUrlChunk 'Nothing
+l = (:=)
 
 -- | Match against a /Parsed/ chunk
 p :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
@@ -36,17 +40,13 @@ p = (:~)
 r :: (T.Text, Regex) -> EitherUrlChunk ('Just [String])
 r = (:*)
 
--- | Container when defining route paths
-data UrlChunks (xs :: [Maybe *]) where
-  Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- stack is left-to-right
-  Root  :: UrlChunks '[]
-
 -- | Glue two chunks together
 (</>) :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs)
 (</>) = Cons
 
 infixr 9 </>
 
--- | The /new-Origin/ chunk - the equivalent to @[]@
-o :: UrlChunks '[]
-o = Root
+-- | Container when defining route paths
+data UrlChunks (xs :: [Maybe *]) where
+  Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- stack is left-to-right
+  Root  :: UrlChunks '[]

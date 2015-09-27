@@ -13,9 +13,60 @@
   , GeneralizedNewtypeDeriving
   #-}
 
+-- |
+-- Module      : Web.Routes.Nested
+-- Copyright   : (c) 2015 Athan Clark
+--
+-- License     : BSD-style
+-- Maintainer  : athan.clark@gmail.com
+-- Stability   : experimental
+-- Portability : GHC
+--
+-- This module exports most of what you'll need for sophisticated routing -
+-- all the tools from <https://hackage.haskell.org/package/wai-middleware-verbs wai-middleware-verbs>
+-- (routing for the incoming HTTP method) and
+-- <https://hackage.haskell.org/package/wai-middleware-content-type wai-middleware-content-type>
+-- (routing for the incoming Accept header, and implied file extension),
+-- <https://hackage.haskell.org/package/wai WAI> itself, and
+-- <https://hackage.haskell.org/package/wai-transformers wai-transformers> - some simple
+-- type aliases wrapped around WAI's @Application@ and @Middleware@ types, allowing us
+-- to embed monad transformer stacks for our applications.
+--
+-- The routing system lets you embed these complicated HTTP verb / content-type
+-- sensative responses just as easily as a WAI @Middleware@. There is enough
+-- tooling provided to use one paradigm or the other. Note - nested-routes
+-- does not affect the @pathInfo@ of the incoming @Request@ in any way, but merely
+-- matches on it and passes control to the designated response.
+--
+-- To match a route, you have a few options - you can match against a string literal,
+-- a regular expression (via <https://hackage.haskell.org/package/regex-compat regex-compat>),
+-- or an <https://hackage.haskell.org/package/attoparsec attoparsec> parser. This list
+-- will most likely grow in the future, depending on demand.
+--
+-- There is also support for embedding security layers in your routes, in the same
+-- nested manner. By "tagging" a set of routes with an authorization role (with @auth@),
+-- you populate a list of roles breached during any request. In the authentication
+-- parameter in @routeAuth@ and @routeActionAuth@, the function
+-- keeps the session integrity in-place, while @auth@ lets you create your authorization
+-- boundaries. Both are symbiotic and neccessary for establishing security, and both allow
+-- you to tap into the monad transformer stack to do logging, STM, database queries,
+-- etc.
+--
+-- To use your set of routes in a WAI application, you need to "extract" the
+-- functionality from your route set - using the @route@, @routeAuth@, @routeAction@,
+-- and @routeActionAuth@
+-- functions, you can create monolithic apps very easily.
+-- But, if you would like to extract the security middleware to place before
+-- say, a /static/ middleware you already have in place, use the @extractAuth@
+-- functions, and others for their respective purposes. This way, you can decompose
+-- the routing system into each subject matter, and re-compose (@.@) them in whichever
+-- order you like for your application.
+
+
+
 module Web.Routes.Nested
-  ( -- * Types
-    module X
+  ( module X
+  -- * Types
   , Tries
   , HandlerT (..)
   , execHandlerT
@@ -23,7 +74,7 @@ module Web.Routes.Nested
   , RoutableT
   , RoutableActionT
   , AuthScope (..)
-  , ExtrudeSound
+  , ExtrudeSoundly
   -- * Combinators
   , handle
   , handleAction
@@ -32,7 +83,7 @@ module Web.Routes.Nested
   , notFound
   , notFoundAction
   , action
-  -- * Entry Point
+  -- * Routing
   , route
   , routeAuth
   , routeAction
@@ -106,7 +157,7 @@ type RoutableT s e u ue m a =
 type RoutableActionT s e u ue m a =
   HandlerT (ActionT ue u m ()) (s, AuthScope) (e -> ActionT ue u m ()) (e,u,ue) m a
 
-type ExtrudeSound cleanxs xs c r =
+type ExtrudeSoundly cleanxs xs c r =
   ( cleanxs ~ CatMaybes xs
   , ArityTypeListIso c cleanxs r
   , Extrude (UrlChunks xs)
@@ -128,9 +179,9 @@ handleAction :: ( Monad m
                 , Singleton (UrlChunks xs)
                     childContent
                     (RootedPredTrie T.Text resultContent)
-                , ExtrudeSound cleanxs xs childContent resultContent
-                , ExtrudeSound cleanxs xs childSec     resultSec
-                , ExtrudeSound cleanxs xs childErr     resultErr
+                , ExtrudeSoundly cleanxs xs childContent resultContent
+                , ExtrudeSoundly cleanxs xs childSec     resultSec
+                , ExtrudeSoundly cleanxs xs childErr     resultErr
                 ) => UrlChunks xs
                   -> Maybe childContent
                   -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -157,9 +208,9 @@ handle :: ( Monad m
           , Singleton (UrlChunks xs)
               childContent
               (RootedPredTrie T.Text resultContent)
-          , ExtrudeSound cleanxs xs childContent resultContent
-          , ExtrudeSound cleanxs xs childSec     resultSec
-          , ExtrudeSound cleanxs xs childErr     resultErr
+          , ExtrudeSoundly cleanxs xs childContent resultContent
+          , ExtrudeSoundly cleanxs xs childSec     resultSec
+          , ExtrudeSoundly cleanxs xs childErr     resultErr
           ) => UrlChunks xs
             -> Maybe childContent
             -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -181,9 +232,9 @@ parent :: ( Monad m
           , Singleton (UrlChunks xs)
               childContent
               (RootedPredTrie T.Text resultContent)
-          , ExtrudeSound cleanxs xs childContent resultContent
-          , ExtrudeSound cleanxs xs childSec     resultSec
-          , ExtrudeSound cleanxs xs childErr     resultErr
+          , ExtrudeSoundly cleanxs xs childContent resultContent
+          , ExtrudeSoundly cleanxs xs childSec     resultSec
+          , ExtrudeSoundly cleanxs xs childErr     resultErr
           ) => UrlChunks xs
             -> HandlerT childContent  childSec  childErr  aux m ()
             -> HandlerT resultContent resultSec resultErr aux m ()
@@ -231,9 +282,9 @@ notFoundAction :: ( Monad m
                   , Singleton (UrlChunks xs)
                       childContent
                       (RootedPredTrie T.Text resultContent)
-                  , ExtrudeSound cleanxs xs childContent resultContent
-                  , ExtrudeSound cleanxs xs childSec     resultSec
-                  , ExtrudeSound cleanxs xs childErr     resultErr
+                  , ExtrudeSoundly cleanxs xs childContent resultContent
+                  , ExtrudeSoundly cleanxs xs childSec     resultSec
+                  , ExtrudeSoundly cleanxs xs childErr     resultErr
                   ) => UrlChunks xs
                     -> Maybe childContent
                     -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -260,9 +311,9 @@ notFound :: ( Monad m
             , Singleton (UrlChunks xs)
                 childContent
                 (RootedPredTrie T.Text resultContent)
-            , ExtrudeSound cleanxs xs childContent resultContent
-            , ExtrudeSound cleanxs xs childSec     resultSec
-            , ExtrudeSound cleanxs xs childErr     resultErr
+            , ExtrudeSoundly cleanxs xs childContent resultContent
+            , ExtrudeSoundly cleanxs xs childSec     resultSec
+            , ExtrudeSoundly cleanxs xs childErr     resultErr
             ) => UrlChunks xs
               -> Maybe childContent
               -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
@@ -278,7 +329,7 @@ notFound ts mvl (Just cs) = do
 notFound _ Nothing Nothing = return ()
 
 
--- * Entry Point ---------------------------------------
+-- * Routing ---------------------------------------
 
 -- | Turns a @HandlerT@ containing @MiddlewareT@s into a @MiddlewareT@.
 route :: ( Functor m
