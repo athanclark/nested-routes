@@ -72,8 +72,6 @@ import           Control.Monad.Trans.Except
 import           Control.Monad.Writer
 import qualified Control.Monad.State                as S
 
-import Debug.Trace
-
 
 type Tries x s e = ( RootedPredTrie T.Text x
                    , RootedPredTrie T.Text x

@@ -70,6 +70,9 @@ Executable example
                       , examples
   GHC-Options:          -Wall
   Main-Is:              Main.hs
+  Other-Modules:        Web.Routes.Nested
+                        Web.Routes.Nested.Types
+                        Web.Routes.Nested.Types.UrlChunks
   Build-Depends:        base
                       , nested-routes
                       , attoparsec
@@ -90,72 +93,54 @@ Executable example
                       , wai-middleware-verbs
                       , warp
 
--- 
--- Executable example-stm
---   if flag(Example-STM)
---     Buildable: True
---   else
---     Buildable: False
---   Default-Language:     Haskell2010
---   HS-Source-Dirs:       src
---                       , examples
---   GHC-Options:          -Wall
---   Main-Is:              STM.hs
---   Other-Modules:        STM.Auth
---                         Web.Routes.Nested
---                         Web.Routes.Nested.FileExtListener
---                         Web.Routes.Nested.FileExtListener.Blaze
---                         Web.Routes.Nested.FileExtListener.Builder
---                         Web.Routes.Nested.FileExtListener.ByteString
---                         Web.Routes.Nested.FileExtListener.Json
---                         Web.Routes.Nested.FileExtListener.Lucid
---                         Web.Routes.Nested.FileExtListener.Text
---                         Web.Routes.Nested.FileExtListener.Types
---                         Web.Routes.Nested.Types
---                         Web.Routes.Nested.Types.UrlChunks
---                         Web.Routes.Nested.VerbListener
---   Build-Depends:        base
---                       , wai
---                       , wai-extra
---                       , wai-session
---                       , cookie
---                       , wai-util
---                       , warp
---                       , http-types
---                       , http-media
---                       , mtl
---                       , transformers
---                       , witherable
---                       , composition
---                       , composition-extra
---                       , semigroups
---                       , constraints
---                       , containers
---                       , text
---                       , aeson
---                       , blaze-html
---                       , lucid
---                       , shakespeare
---                       , clay
---                       , bytestring
---                       , attoparsec
---                       , regex-compat
---                       , pred-trie
---                       , tries
---                       , poly-arity
---                       , sets
---                       , errors
---                       , cryptonite
---                       , memory
---                       , time
---                       , iso8601-time
---                       , utf8-string
---                       , stm
---                       , errors
---                       , cookie
---                       , data-default
---                       , blaze-builder
---                       , base64-bytestring
+
+Executable example-stm
+  if flag(Example-STM)
+    Buildable: True
+  else
+    Buildable: False
+  Default-Language:     Haskell2010
+  HS-Source-Dirs:       src
+                      , examples
+  GHC-Options:          -Wall
+  Main-Is:              STM.hs
+  Other-Modules:        STM.Auth
+                        Web.Routes.Nested
+                        Web.Routes.Nested.Types
+                        Web.Routes.Nested.Types.UrlChunks
+  Build-Depends:        base
+                      , base64-bytestring
+                      , blaze-builder
+                      , nested-routes
+                      , attoparsec
+                      , bytestring
+                      , composition-extra
+                      , containers
+                      , cookie
+                      , cryptonite
+                      , data-default
+                      , errors
+                      , http-types
+                      , iso8601-time
+                      , lucid
+                      , memory
+                      , mtl
+                      , poly-arity
+                      , pred-trie
+                      , regex-compat
+                      , semigroups
+                      , stm
+                      , text
+                      , time
+                      , transformers
+                      , tries
+                      , wai-extra
+                      , wai-middleware-content-type
+                      , wai-middleware-verbs
+                      , wai-transformers
+                      , wai-session
+                      , warp
+                      , utf8-string
 
 Source-Repository head
   Type:                 git

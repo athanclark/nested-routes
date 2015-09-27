@@ -66,7 +66,7 @@ main =
       text "bar!"
       json ("json bar!" :: LT.Text)
 
-    -- `/foo/1234e12`
+    -- `/foo/1234e12`, uses attoparsec
     doubleRoute = p ("double", double) </> o
     doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
@@ -74,7 +74,7 @@ main =
     emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
-    -- `/baz`
+    -- `/baz`, uses regex-compat
     bazRoute = l "baz" </> o
     bazHandle = do
       get $ text "baz!"
