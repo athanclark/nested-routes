@@ -30,18 +30,15 @@ reflecting their results. As an example:
 
 module Main where
 
-import Network.Wai
+import Web.Routes.Nested
+import Network.Wai.Trans
 import Network.Wai.Handler.Warp
 import Network.HTTP.Types
-import Web.Routes.Nested
-import Data.Attoparsec.Text
-import Text.Regex
-import Data.Monoid
+import           Text.Regex
 import qualified Data.Text.Lazy as LT
-import Control.Monad.Error.Class
-import Control.Monad.IO.Class
-
-import Debug.Trace
+import           Data.Attoparsec.Text
+import Data.Monoid
+import Control.Monad.Except
 
 
 data AuthRole = AuthRole deriving (Show, Eq)
@@ -49,9 +46,9 @@ data AuthErr = NeedsAuth deriving (Show, Eq)
 
 authorize :: ( Monad m
              , MonadError AuthErr m
-             ) => Request -> [AuthRole] -> m (Response -> Response)                                                                                                     
--- authorize _ _ = return id -- uncomment to force constant authorization                                                                                               
-authorize req ss | null ss   = return id                                                                                                                                
+             ) => Request -> [AuthRole] -> m (Response -> Response)
+-- authorize _ _ = return id -- uncomment to force constant authorization
+authorize req ss | null ss   = return id
                  | otherwise = throwError NeedsAuth
 
 defApp :: Application
@@ -59,16 +56,16 @@ defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
 main :: IO ()
 main =
-  let app = routeAuth authorize routes
+  let app = routeActionAuth authorize routes
       routes =
-        handle o (Just rootHandle) $ Just $ do
-          handle fooRoute (Just fooHandle) $ Just $ do
+        handleAction o (Just rootHandle) $ Just $ do
+          handleAction fooRoute (Just fooHandle) $ Just $ do
             auth AuthRole unauthHandle ProtectChildren
-            handle barRoute    (Just barHandle)    Nothing
-            handle doubleRoute (Just doubleHandle) Nothing
-          handle emailRoute (Just emailHandle) Nothing
-          handle bazRoute (Just bazHandle) Nothing
-          notFound o (Just notFoundHandle) Nothing
+            handleAction barRoute    (Just barHandle)    Nothing
+            handleAction doubleRoute (Just doubleHandle) Nothing
+          handleAction emailRoute (Just emailHandle) Nothing
+          handleAction bazRoute (Just bazHandle) Nothing
+          notFoundAction o (Just notFoundHandle) Nothing
   in run 3000 $ app defApp
   where
     rootHandle = get $ text "Home"
@@ -83,7 +80,7 @@ main =
       text "bar!"
       json ("json bar!" :: LT.Text)
 
-    -- `/foo/1234e12`
+    -- `/foo/1234e12`, uses attoparsec
     doubleRoute = p ("double", double) </> o
     doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
@@ -91,14 +88,15 @@ main =
     emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
-    -- `/baz`
+    -- `/baz`, uses regex-compat
     bazRoute = l "baz" </> o
     bazHandle = do
       get $ text "baz!"
       let uploader req = do liftIO $ print =<< strictRequestBody req
-                            return $ Just ()
-          uploadHandle Nothing = text "Upload Failed"
-          uploadHandle (Just ()) = text "Woah! Upload content!"
+                            return ()
+          uploadHandle (Left Nothing)  = text "Upload Failed"
+          uploadHandle (Left (Just _)) = text "Impossible - no errors thrown in uploader"
+          uploadHandle (Right ())      = text "Woah! Upload content!"
       post uploader uploadHandle
 
     unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
@@ -111,9 +109,10 @@ for more information.
 ## Installation
 
 ```bash
-cabal install nested-routes
+stack install nested-routes
 ```
 
 ## Contributing
 
-Fork, pull request, contact, repeat :)
+Contact, fork, pull request, repeat :)
+
