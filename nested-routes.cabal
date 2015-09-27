@@ -60,6 +60,40 @@ Library
                       , wai-middleware-content-type >= 0.0.2
                       , wai-middleware-verbs >= 0.0.4
 
+
+Test-Suite test
+  Type:                exitcode-stdio-1.0
+  Default-Languag:     Haskell2010
+  HS-Source-Dirs:       src
+                      , test
+  GHC-Options:          -Wall -threaded
+  Main-Is:              Test.hs
+  Other-Modules:        Spec
+                        Web.Routes.Nested
+                        Web.Routes.Nested.Types
+                        Web.Routes.Nested.Types.UrlChunks
+  Build-Depends:        base
+                      , nested-routes
+                      , attoparsec
+                      , bytestring
+                      , composition-extra
+                      , containers
+                      , http-types
+                      , mtl
+                      , poly-arity
+                      , pred-trie
+                      , regex-compat
+                      , semigroups
+                      , text
+                      , transformers
+                      , tries
+                      , wai-transformers
+                      , wai-middleware-content-type
+                      , wai-middleware-verbs
+                      , hspec
+                      , hspec-wai
+
+
 Executable example
   if flag(Example)
     Buildable: True

@@ -5,6 +5,7 @@
   , DeriveFunctor
   , TypeOperators
   , TupleSections
+  , DoAndIfThenElse
   , ConstraintKinds
   , FlexibleContexts
   , OverloadedStrings
