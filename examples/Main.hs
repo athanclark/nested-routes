@@ -31,11 +31,10 @@ data AuthErr = NeedsAuth deriving (Show, Eq)
 -- so a guest just returns Nothing, and we could handle the case in @putAuth@ to
 -- not do anything.
 authorize :: ( Monad m
-             , MonadError AuthErr m
-             ) => Request -> [AuthRole] -> m (Response -> Response)
+             ) => Request -> [AuthRole] -> m (Response -> Response, Maybe AuthErr)
 -- authorize _ _ = return id -- uncomment to force constant authorization
-authorize req ss | null ss   = return id
-                 | otherwise = throwError NeedsAuth
+authorize req ss | null ss   = return (id, Nothing)
+                 | otherwise = return (id, Just NeedsAuth)
 
 defApp :: Application
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("

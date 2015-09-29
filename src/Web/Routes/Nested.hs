@@ -124,7 +124,6 @@ import           Data.Function.Poly
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
-import           Control.Monad.Trans.Except
 import qualified Control.Monad.State                as S
 
 
@@ -300,25 +299,6 @@ notFound :: ( Monad m
 notFound = handleAny
 
 
--- otherwiseAction :: ( Monad m
---                   , Functor m
---                   , cleanxs ~ CatMaybes xs
---                   , HasResult childContent (ActionT ue u m ())
---                   , HasResult childErr     (e -> ActionT ue u m ())
---                   , ExpectArity cleanxs childContent
---                   , ExpectArity cleanxs childSec
---                   , ExpectArity cleanxs childErr
---                   , Singleton (UrlChunks xs)
---                       childContent
---                       (RootedPredTrie T.Text resultContent)
---                   , ExtrudeSoundly cleanxs xs childContent resultContent
---                   , ExtrudeSoundly cleanxs xs childSec     resultSec
---                   , ExtrudeSoundly cleanxs xs childErr     resultErr
---                   ) => UrlChunks xs
---                     -> Maybe childContent
---                     -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
---                     ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-
 
 -- * Routing ---------------------------------------
 
@@ -337,7 +317,7 @@ route hs = extractContent hs . extractNotFound hs
 routeAuth :: ( Functor m
              , Monad m
              , MonadIO m
-             ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
+             ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- ^ authorize
                -> RoutableT sec e u ue m () -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
@@ -355,7 +335,7 @@ routeAction = route . actionToMiddleware
 routeActionAuth :: ( Functor m
                    , Monad m
                    , MonadIO m
-                   ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- ^ authorize
+                   ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- ^ authorize
                      -> RoutableActionT sec e u ue m () -- ^ Assembled @handle@ calls
                      -> MiddlewareT m
 routeActionAuth authorize = routeAuth authorize . actionToMiddleware
@@ -412,18 +392,17 @@ extractAuthSym hs req = do
 extractAuth :: ( Functor m
                , Monad m
                , MonadIO m
-               ) => (Request -> [sec] -> ExceptT e m (Response -> Response)) -- authorization method
+               ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- authorization method
                  -> HandlerT x (sec, AuthScope) (e -> MiddlewareT m) aux m a
                  -> MiddlewareT m
 extractAuth authorize hs app req respond = do
   (_,_,_,trie) <- execHandlerT hs
   ss <- extractAuthSym hs req
-  ef <- runExceptT $ authorize req ss
-  either (\e -> maybe (app req respond)
-                      (\mid -> mid app req respond)
-                    $ (getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie) <$~> e)
-         (\f -> app req (respond . f))
-         ef
+  (f,me) <- authorize req ss
+  fromMaybe (app req (respond . f)) $ do
+    e <- me
+    (_,mid,_) <- PT.matchRPT (pathInfo req) trie
+    return $ mid e app req (respond . f)
 
 -- | Extracts only the @notFound@ responses into a @MiddlewareT@.
 extractNotFound :: ( Functor m

@@ -26,6 +26,7 @@ import Control.Concurrent.STM
 import Control.Error.Util
 import Control.Monad.Except
 import Control.Monad.Reader
+import Control.Monad.State
 import Crypto.Hash
 
 
@@ -176,31 +177,44 @@ data AuthenticationError = NoSessionHeaders
 
 
 authenticate :: ( MonadIO m
-                , MonadError AuthenticationError m
                 , MonadReader AuthEnv m
-                ) => Request -> [SecurityLayer] -> m (Response -> Response)
-authenticate _ [] = return id
-authenticate req _ = do
+                ) => Request -> [SecurityLayer] -> m (Response -> Response, Maybe AuthenticationError)
+authenticate _ [] = return (id, Nothing)
+authenticate req _ = flip runStateT Nothing $ do
   liftIO $ putStrLn "<!> Auth Attempt <!>"
   liftIO $ putStrLn "--- Headers ----------- \n" >> print (requestHeaders req) >> putStrLn "\n"
-  userSession        <- note' NoSessionHeaders $ getUserSession $ requestHeaders req
-  userSessionIsValid <- checkUserSession userSession
+  let mUserSession = getUserSession $ requestHeaders req
+  put $ Just NoSessionHeaders <* mUserSession
+  maybe (return id) hasUserSession mUserSession
+
+hasUserSession userSession = do
   liftIO $ putStrLn "--- User Session ------ \n" >> print userSession >> putStrLn "\n"
   cacheKey <- authEnvCache <$> ask
   cache <- liftIO $ readTVarIO cacheKey
   liftIO $ putStrLn "--- Cache ------------- \n" >> print cache >> putStrLn "\n"
-  mCachedSession     <- lookupUserSession (userSessID userSession)
-  (UserSession i cachedTime cachedNonce) <- note' SessionNotInCache mCachedSession
-  newUserSess'       <- newUserSession
+  mCachedSession <- lookupUserSession (userSessID userSession)
+  put $ Just SessionNotInCache <* mCachedSession
+  maybe (return id) (hasCachedSession userSession) mCachedSession
+
+hasCachedSession userSession (UserSession i cachedTime cachedNonce) = do
+  newUserSess' <- newUserSession
   let newUserSess = newUserSess' {userSessID = i}
+  userSessionIsValid <- checkUserSession userSession
   case () of
-    () | diffUTCTime (userSessTime newUserSess) cachedTime >= 60 -> do deleteUserSession i
-                                                                       throwError SessionTimedOut
-       | cachedNonce /= userSessNonce userSession -> throwError SessionMismatch
-       | not userSessionIsValid                   -> throwError InvalidRequestNonce
-       | otherwise -> do writeUserSession newUserSess
-                         return $ mapResponseHeaders (++ makeSessionCookies newUserSess)
-                                . clearSessionResponse
+    () | diffUTCTime (userSessTime newUserSess) cachedTime >= 60 -> do
+           deleteUserSession i
+           put $ Just SessionTimedOut
+           return id
+       | cachedNonce /= userSessNonce userSession -> do
+           put $ Just SessionMismatch
+           return id
+       | not userSessionIsValid -> do
+           put $ Just InvalidRequestNonce
+           return id
+       | otherwise -> do
+           writeUserSession newUserSess
+           return $ mapResponseHeaders (++ makeSessionCookies newUserSess)
+                      . clearSessionResponse
 
 
 note' :: MonadError e m => e -> Maybe a -> m a
