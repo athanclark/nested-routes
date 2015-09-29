@@ -50,7 +50,7 @@ main = do
         hereAction rootHandle
         parent ("foo" </> o) $ do
           hereAction fooHandle
-          auth ShouldBeLoggedIn unauthHandle ProtectChildren
+          auth ShouldBeLoggedIn unauthHandle DontProtectHere
           handleAction ("bar" </> o) barHandle
           handleAction doubleRoute doubleHandle
         handleAction emailRoute emailHandle
@@ -58,7 +58,7 @@ main = do
         handleAction ("login" </> o) loginHandle
         parent ("logout" </> o) $ do
           hereAction logoutHandle
-          auth ShouldBeLoggedIn unauthHandle ProtectParent
+          auth ShouldBeLoggedIn unauthHandle ProtectHere
         notFoundAction notFoundHandle
   run 3000 $ routedApp $ liftApplication defApp
   where

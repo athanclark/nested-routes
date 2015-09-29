@@ -30,11 +30,10 @@ data AuthErr = NeedsAuth deriving (Show, Eq)
 -- so a guest just returns Nothing, and we could handle the case in @putAuth@ to
 -- not do anything.
 authorize :: ( Monad m
-             , MonadError AuthErr m
-             ) => Request -> [AuthRole] -> m (Response -> Response)
+             ) => Request -> [AuthRole] -> m (Response -> Response, Maybe AuthErr)
 -- authorize _ _ = return id -- uncomment to force constant authorization
-authorize req ss | null ss   = return id
-                 | otherwise = throwError NeedsAuth
+authorize req ss | null ss   = return (id, Nothing)
+                 | otherwise = return (id, Just NeedsAuth)
 
 defApp :: Application
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("
@@ -42,15 +41,16 @@ defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 app :: Application
 app =
   let yoDawgIHeardYouLikeYoDawgsYo = routeActionAuth authorize routes
-      routes =
-        handleAction o (Just rootHandle) $ Just $ do
-          handleAction fooRoute (Just fooHandle) $ Just $ do
-            auth AuthRole unauthHandle ProtectChildren
-            handleAction barRoute    (Just barHandle)    Nothing
-            handleAction doubleRoute (Just doubleHandle) Nothing
-          handleAction emailRoute (Just emailHandle) Nothing
-          handleAction bazRoute (Just bazHandle) Nothing
-          notFoundAction o (Just notFoundHandle) Nothing
+      routes = do
+        hereAction rootHandle
+        parent fooRoute $ do
+          hereAction fooHandle
+          auth AuthRole unauthHandle DontProtectHere
+          handleAction barRoute    barHandle
+          handleAction doubleRoute doubleHandle
+        handleAction emailRoute emailHandle
+        handleAction bazRoute bazHandle
+        notFoundAction notFoundHandle
   in yoDawgIHeardYouLikeYoDawgsYo defApp
   where
     rootHandle = get $ text "Home"

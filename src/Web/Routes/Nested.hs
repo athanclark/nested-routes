@@ -260,7 +260,7 @@ parent ts cs = do
 -- | Designate the scope of security to the set of routes - either only the adjacent
 -- routes, or the adjacent /and/ the parent container node (root node if not
 -- declared).
-data AuthScope = ProtectParent | ProtectChildren
+data AuthScope = ProtectHere | DontProtectHere
   deriving (Show, Eq)
 
 -- | Sets the security role and error handler for a set of routes, optionally
@@ -385,7 +385,7 @@ extractAuthSym hs req = do
   (_,_,trie,_) <- execHandlerT hs
   return $ foldl go [] (PT.matchesRPT (pathInfo req) trie)
   where
-    go ys (_,(_,ProtectChildren),[]) = ys
+    go ys (_,(_,DontProtectHere),[]) = ys
     go ys (_,(x,_              ),_ ) = ys ++ [x]
 
 -- | Extracts only the security handling logic into a @MiddlewareT@.

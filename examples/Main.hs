@@ -46,7 +46,7 @@ main =
         hereAction rootHandle
         parent ("foo" </> o) $ do
           hereAction fooHandle
-          auth AuthRole unauthHandle ProtectChildren
+          auth AuthRole unauthHandle DontProtectHere
           handleAction ("bar" </> o) barHandle
           handleAction (p ("double", double) </> o) doubleHandle
         handleAction emailRoute emailHandle
