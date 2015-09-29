@@ -78,6 +78,10 @@ module Web.Routes.Nested
   -- * Combinators
   , handle
   , handleAction
+  , here
+  , hereAction
+  , handleAny
+  , handleAnyAction
   , parent
   , auth
   , notFound
@@ -170,68 +174,75 @@ type ExtrudeSoundly cleanxs xs c r =
 -- it to a @MiddlewareT@.
 handleAction :: ( Monad m
                 , Functor m
-                , cleanxs ~ CatMaybes xs
                 , HasResult childContent (ActionT ue u m ())
-                , HasResult childErr     (e -> ActionT ue u m ())
-                , ExpectArity cleanxs childContent
-                , ExpectArity cleanxs childSec
-                , ExpectArity cleanxs childErr
+                , HasResult err          (e -> ActionT ue u m ())
                 , Singleton (UrlChunks xs)
                     childContent
                     (RootedPredTrie T.Text resultContent)
-                , ExtrudeSoundly cleanxs xs childContent resultContent
-                , ExtrudeSoundly cleanxs xs childSec     resultSec
-                , ExtrudeSoundly cleanxs xs childErr     resultErr
+                , cleanxs ~ CatMaybes xs
+                , ArityTypeListIso childContent cleanxs resultContent
                 ) => UrlChunks xs
-                  -> Maybe childContent
-                  -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
-                  ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-handleAction ts (Just vl) Nothing = tell' (singleton ts vl, mempty, mempty, mempty)
-handleAction ts mvl (Just cs) = do
-  (RootedPredTrie _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell' ( extrude ts $ RootedPredTrie mvl trieContent
-        , extrude ts trieNotFound
-        , extrude ts trieSec
-        , extrude ts trieErr
-        )
-handleAction _ Nothing Nothing = return ()
+                  -> childContent
+                  -> HandlerT resultContent sec err (e,u,ue) m ()
+handleAction ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
+
 
 -- | Embed a @MiddlewareT@ into a set of routes.
 handle :: ( Monad m
           , Functor m
-          , cleanxs ~ CatMaybes xs
           , HasResult childContent (MiddlewareT m)
-          , HasResult childErr     (e -> MiddlewareT m)
-          , ExpectArity cleanxs childContent
-          , ExpectArity cleanxs childSec
-          , ExpectArity cleanxs childErr
+          , HasResult err     (e -> MiddlewareT m)
           , Singleton (UrlChunks xs)
               childContent
               (RootedPredTrie T.Text resultContent)
-          , ExtrudeSoundly cleanxs xs childContent resultContent
-          , ExtrudeSoundly cleanxs xs childSec     resultSec
-          , ExtrudeSoundly cleanxs xs childErr     resultErr
+          , cleanxs ~ CatMaybes xs
+          , ArityTypeListIso childContent cleanxs resultContent
           ) => UrlChunks xs
-            -> Maybe childContent
-            -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
-            ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-handle ts (Just vl) Nothing = tell' (singleton ts vl, mempty, mempty, mempty)
-handle ts mvl (Just cs) = do
-  (RootedPredTrie _ trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell' ( extrude ts $ RootedPredTrie mvl trieContent
-        , extrude ts trieNotFound
-        , extrude ts trieSec
-        , extrude ts trieErr
-        )
-handle _ Nothing Nothing = return ()
+            -> childContent
+            -> HandlerT resultContent sec err (e,u,ue) m ()
+handle ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
+
+
+hereAction :: ( Monad m
+              , Functor m
+              , HasResult content (ActionT ue u m ())
+              , HasResult err     (e -> ActionT ue u m ())
+              ) => content
+                -> HandlerT content sec err (e,u,ue) m ()
+hereAction = handleAction o
+
+-- | Create a handle for the present route - an alias for @\h -> handle o (Just h)@.
+here :: ( Monad m
+        , Functor m
+        , HasResult content (MiddlewareT m)
+        , HasResult err     (e -> MiddlewareT m)
+        ) => content
+          -> HandlerT content sec err (e,u,ue) m ()
+here = handle o
+
+
+handleAnyAction :: ( Monad m
+                   , Functor m
+                   , HasResult content (ActionT ue u m ())
+                   , HasResult err     (e -> ActionT ue u m ())
+                   ) => content
+                     -> HandlerT content sec err (e,u,ue) m ()
+handleAnyAction vl = tell' (mempty, singleton o vl, mempty, mempty)
+
+-- | Match against any route, as a last resort against all failing @handle@s.
+handleAny :: ( Monad m
+             , Functor m
+             , HasResult content (MiddlewareT m)
+             , HasResult err     (e -> MiddlewareT m)
+             ) => content
+               -> HandlerT content sec err (e,u,ue) m ()
+handleAny vl = tell' (mempty, singleton o vl, mempty, mempty)
+
 
 -- | Prepend a path to an existing set of routes.
 parent :: ( Monad m
           , Functor m
           , cleanxs ~ CatMaybes xs
-          , Singleton (UrlChunks xs)
-              childContent
-              (RootedPredTrie T.Text resultContent)
           , ExtrudeSoundly cleanxs xs childContent resultContent
           , ExtrudeSoundly cleanxs xs childSec     resultSec
           , ExtrudeSoundly cleanxs xs childErr     resultErr
@@ -273,60 +284,40 @@ auth token handleFail scope =
 -- it to a @MiddlewareT@.
 notFoundAction :: ( Monad m
                   , Functor m
-                  , cleanxs ~ CatMaybes xs
-                  , HasResult childContent (ActionT ue u m ())
-                  , HasResult childErr     (e -> ActionT ue u m ())
-                  , ExpectArity cleanxs childContent
-                  , ExpectArity cleanxs childSec
-                  , ExpectArity cleanxs childErr
-                  , Singleton (UrlChunks xs)
-                      childContent
-                      (RootedPredTrie T.Text resultContent)
-                  , ExtrudeSoundly cleanxs xs childContent resultContent
-                  , ExtrudeSoundly cleanxs xs childSec     resultSec
-                  , ExtrudeSoundly cleanxs xs childErr     resultErr
-                  ) => UrlChunks xs
-                    -> Maybe childContent
-                    -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
-                    ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-notFoundAction ts (Just vl) Nothing = tell' (mempty, singleton ts vl, mempty, mempty)
-notFoundAction ts mvl (Just cs) = do
-  (trieContent,RootedPredTrie _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell' ( extrude ts trieContent
-        , extrude ts $ RootedPredTrie mvl trieNotFound
-        , extrude ts trieSec
-        , extrude ts trieErr
-        )
-notFoundAction _ Nothing Nothing = return ()
+                  , HasResult content (ActionT ue u m ())
+                  , HasResult err     (e -> ActionT ue u m ())
+                  ) => content
+                    -> HandlerT content sec err (e,u,ue) m ()
+notFoundAction = handleAnyAction
 
 -- | Embed a @MiddlewareT@ as a not-found handler into a set of routes.
 notFound :: ( Monad m
             , Functor m
-            , cleanxs ~ CatMaybes xs
-            , HasResult childContent (MiddlewareT m)
-            , HasResult childErr     (e -> MiddlewareT m)
-            , ExpectArity cleanxs childContent
-            , ExpectArity cleanxs childSec
-            , ExpectArity cleanxs childErr
-            , Singleton (UrlChunks xs)
-                childContent
-                (RootedPredTrie T.Text resultContent)
-            , ExtrudeSoundly cleanxs xs childContent resultContent
-            , ExtrudeSoundly cleanxs xs childSec     resultSec
-            , ExtrudeSoundly cleanxs xs childErr     resultErr
-            ) => UrlChunks xs
-              -> Maybe childContent
-              -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
-              ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
-notFound ts (Just vl) Nothing = tell' (mempty, singleton ts vl, mempty, mempty)
-notFound ts mvl (Just cs) = do
-  (trieContent,RootedPredTrie _ trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
-  tell' ( extrude ts trieContent
-        , extrude ts $ RootedPredTrie mvl trieNotFound
-        , extrude ts trieSec
-        , extrude ts trieErr
-        )
-notFound _ Nothing Nothing = return ()
+            , HasResult content (MiddlewareT m)
+            , HasResult err     (e -> MiddlewareT m)
+            ) => content
+              -> HandlerT content sec err (e,u,ue) m ()
+notFound = handleAny
+
+
+-- otherwiseAction :: ( Monad m
+--                   , Functor m
+--                   , cleanxs ~ CatMaybes xs
+--                   , HasResult childContent (ActionT ue u m ())
+--                   , HasResult childErr     (e -> ActionT ue u m ())
+--                   , ExpectArity cleanxs childContent
+--                   , ExpectArity cleanxs childSec
+--                   , ExpectArity cleanxs childErr
+--                   , Singleton (UrlChunks xs)
+--                       childContent
+--                       (RootedPredTrie T.Text resultContent)
+--                   , ExtrudeSoundly cleanxs xs childContent resultContent
+--                   , ExtrudeSoundly cleanxs xs childSec     resultSec
+--                   , ExtrudeSoundly cleanxs xs childErr     resultErr
+--                   ) => UrlChunks xs
+--                     -> Maybe childContent
+--                     -> Maybe (HandlerT childContent  childSec  childErr  (e,u,ue) m ())
+--                     ->        HandlerT resultContent resultSec resultErr (e,u,ue) m ()
 
 
 -- * Routing ---------------------------------------

@@ -22,12 +22,10 @@ import qualified Data.Text.Lazy as LT
 import qualified Data.ByteString as BS
 import qualified Data.IntMap as IntMap
 import Data.ByteArray (convert)
-import Data.Function.Syntax
 
 import Control.Concurrent.STM
 import Control.Error.Util
-import Control.Monad.Error.Class
-import Control.Monad.IO.Class
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
 import Crypto.Random
@@ -47,29 +45,29 @@ main = do
              let n' = hash n :: Digest SHA512
                  n'' = convert n' :: BS.ByteString
              return n''
-  let app a r1 r2 = runReaderT (routeActionAuth authenticate routes (liftIO .* a) r1 r2) $ AuthEnv cacheVar uIdVar salt
+  let routedApp app req resp = runReaderT (routeActionAuth authenticate routes app req resp) $ AuthEnv cacheVar uIdVar salt
       routes = do
-        handleAction o (Just rootHandle) Nothing
-        handleAction fooRoute (Just fooHandle) $ Just $ do
+        hereAction rootHandle
+        parent ("foo" </> o) $ do
+          hereAction fooHandle
           auth ShouldBeLoggedIn unauthHandle ProtectChildren
-          handleAction barRoute    (Just barHandle)    Nothing
-          handleAction doubleRoute (Just doubleHandle) Nothing
-        handleAction emailRoute (Just emailHandle) Nothing
-        handleAction bazRoute (Just bazHandle) Nothing
-        handleAction loginRoute (Just loginHandle) Nothing
-        handleAction logoutRoute (Just logoutHandle) $ Just $
+          handleAction ("bar" </> o) barHandle
+          handleAction doubleRoute doubleHandle
+        handleAction emailRoute emailHandle
+        handleAction ("baz" </> o) bazHandle
+        handleAction ("login" </> o) loginHandle
+        parent ("logout" </> o) $ do
+          hereAction logoutHandle
           auth ShouldBeLoggedIn unauthHandle ProtectParent
-        notFoundAction o (Just notFoundHandle) Nothing
-  run 3000 $ app defApp
+        notFoundAction notFoundHandle
+  run 3000 $ routedApp $ liftApplication defApp
   where
     rootHandle = get $ text "Home"
 
     -- `/foo`
-    fooRoute = l "foo" </> o
     fooHandle = get $ text "foo!"
 
     -- `/foo/bar`
-    barRoute = l "bar" </> o
     barHandle = get $ do
       text "bar!"
       json ("json bar!" :: LT.Text)
@@ -83,7 +81,6 @@ main = do
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
     -- `/baz`
-    bazRoute = l "baz" </> o
     bazHandle = do
       get $ text "baz!"
       let uploader req = do liftIO $ print =<< strictRequestBody req
@@ -94,7 +91,6 @@ main = do
           -- Hidden flaw ^ UserSession & LoginError are only options
       post uploader uploadHandle
 
-    loginRoute = "login" </> o
     loginHandle = do
       get $ lucid loginPage
       postReq (login 128) loginResp
@@ -124,7 +120,6 @@ main = do
         firstIs f (x:_) = f x
 
 
-    logoutRoute = "logout" </> o
     logoutHandle = getReq $ \req -> do
       resp <- case getUserSession $ requestHeaders req of
         Nothing -> return "no session :s"

@@ -43,31 +43,29 @@ defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 main :: IO ()
 main =
   let app = routeActionAuth authorize routes
-      routes =
-        handleAction o (Just rootHandle) $ Just $ do
-          handleAction fooRoute (Just fooHandle) $ Just $ do
-            auth AuthRole unauthHandle ProtectChildren
-            handleAction barRoute    (Just barHandle)    Nothing
-            handleAction doubleRoute (Just doubleHandle) Nothing
-          handleAction emailRoute (Just emailHandle) Nothing
-          handleAction bazRoute (Just bazHandle) Nothing
-          notFoundAction o (Just notFoundHandle) Nothing
+      routes = do
+        hereAction rootHandle
+        parent ("foo" </> o) $ do
+          hereAction fooHandle
+          auth AuthRole unauthHandle ProtectChildren
+          handleAction ("bar" </> o) barHandle
+          handleAction (p ("double", double) </> o) doubleHandle
+        handleAction emailRoute emailHandle
+        handleAction ("baz" </> o) bazHandle
+        notFoundAction notFoundHandle
   in run 3000 $ app defApp
   where
     rootHandle = get $ text "Home"
 
     -- `/foo`
-    fooRoute = l "foo" </> o
     fooHandle = get $ text "foo!"
 
     -- `/foo/bar`
-    barRoute = l "bar" </> o
     barHandle = get $ do
       text "bar!"
       json ("json bar!" :: LT.Text)
 
     -- `/foo/1234e12`, uses attoparsec
-    doubleRoute = p ("double", double) </> o
     doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
     -- `/athan@foo.com`
@@ -75,7 +73,6 @@ main =
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
     -- `/baz`, uses regex-compat
-    bazRoute = l "baz" </> o
     bazHandle = do
       get $ text "baz!"
       let uploader req = do liftIO $ print =<< strictRequestBody req

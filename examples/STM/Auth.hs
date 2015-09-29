@@ -6,41 +6,27 @@
 module STM.Auth where
 
 import Network.Wai.Trans
-import Network.Wai.Handler.Warp
-import Network.Wai.Session
 import Network.HTTP.Types
-import Web.Routes.Nested
 import Web.Cookie
 import Data.Attoparsec.Text
-import Text.Regex
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import qualified Data.Text.Lazy as LT
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as BS
 import Blaze.ByteString.Builder (toByteString)
 import qualified Data.IntMap as IntMap
-import Data.ByteString.UTF8 (fromString, toString)
+import Data.ByteString.UTF8 (fromString)
 import Data.ByteArray (convert)
 import Data.Time
 import Data.Time.ISO8601
 import Data.Maybe
-import Data.Default
 
 import Control.Concurrent.STM
-import Control.Monad.STM
-import Control.Monad.Error.Class
 import Control.Error.Util
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Control.Monad
-import Crypto.Random
-import Crypto.Random.Types
 import Crypto.Hash
-
-import Debug.Trace
 
 
 -- | @sec@
@@ -217,9 +203,11 @@ authenticate req _ = do
                                 . clearSessionResponse
 
 
+note' :: MonadError e m => e -> Maybe a -> m a
 note' e mx = fromMaybe (throwError e) $ pure <$> mx
 
 
+insert :: Eq k => k -> a -> [(k,a)] -> [(k,a)]
 insert k v [] = [(k,v)]
 insert k v ((k',v'):xs) | k == k' = (k,v):xs
                         | otherwise = (k',v'): insert k v xs
