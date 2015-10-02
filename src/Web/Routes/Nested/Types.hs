@@ -20,8 +20,6 @@ module Web.Routes.Nested.Types
   , module Web.Routes.Nested.Types.UrlChunks
   ) where
 
-import           Data.Attoparsec.Text
-import           Text.Regex
 import           Web.Routes.Nested.Types.UrlChunks
 import qualified Data.Text as T
 import           Data.Trie.Pred

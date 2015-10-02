@@ -45,21 +45,21 @@ data AuthRole = AuthRole deriving (Show, Eq)
 data AuthErr = NeedsAuth deriving (Show, Eq)
 
 -- | If you fail here and throw an AuthErr, then the user was not authorized to
--- under the conditions set by @ss :: [AuthRole]@, and based on the authentication
--- of that user's session from the @Request@ object. Note that we could have a
--- shared cache of authenticated sessions, by adding more constraints on @m@ like
+-- under the conditions set by @ss :: [AuthRole]@, and based o_n the authentication
+-- o_f that user's session from the @Request@ o_bject. Note that we could have a
+-- shared cache o_f authenticated sessions, by adding more constraints o_n @m@ like
 -- @MonadIO@.
 -- For instance, even if there are [] auth roles, we could still include a header/timestamp
--- pair to uniquely identify the guest. Or, we could equally change @Checksum ~ Maybe Token@,
+-- pair to uniquely identify the guest. o_r, we could equally change @Checksum ~ Maybe Token@,
 -- so a guest just returns Nothing, and we could handle the case in @putAuth@ to
 -- not do anything.
 authorize :: ( Monad m
              ) => Request -> [AuthRole] -> m (Response -> Response, Maybe AuthErr)
 -- authorize _ _ = return id -- uncomment to force constant authorization
 authorize req ss | null ss   = return (id, Nothing)
-                 | otherwise = return (id, Just NeedsAuth)
-
-defApp :: Application
+                 | otherwise = return (id, Just NeedsAuth)                                                                                                              
+                                                                                                                                                                        
+defApp :: Application                                                                                                                                                   
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
 main :: IO ()
@@ -67,13 +67,13 @@ main =
   let app = routeActionAuth authorize routes
       routes = do
         hereAction rootHandle
-        parent ("foo" </> o) $ do
+        parent ("foo" </> o_) $ do
           hereAction fooHandle
           auth AuthRole unauthHandle DontProtectHere
-          handleAction ("bar" </> o) barHandle
-          handleAction (p ("double", double) </> o) doubleHandle
+          handleAction ("bar" </> o_) barHandle
+          handleAction (p_ ("double", double) </> o_) doubleHandle
         handleAction emailRoute emailHandle
-        handleAction ("baz" </> o) bazHandle
+        handleAction ("baz" </> o_) bazHandle
         notFoundAction notFoundHandle
   in run 3000 $ app defApp
   where
@@ -91,7 +91,7 @@ main =
     doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
     -- `/athan@foo.com`
-    emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
+    emailRoute = r_ ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
     -- `/baz`, uses regex-compat
