@@ -56,25 +56,25 @@ app =
     rootHandle = get $ text "Home"
 
     -- `/foo`
-    fooRoute = l "foo" </> o
+    fooRoute = l_ "foo" </> o_
     fooHandle = get $ text "foo!"
 
     -- `/foo/bar`
-    barRoute = l "bar" </> o
+    barRoute = l_ "bar" </> o_
     barHandle = get $ do
       text "bar!"
       json ("json bar!" :: LT.Text)
 
     -- `/foo/1234e12`, uses attoparsec
-    doubleRoute = p ("double", double) </> o
+    doubleRoute = p_ ("double", double) </> o_
     doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
     -- `/athan@foo.com`
-    emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
+    emailRoute = r_ ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
     -- `/baz`, uses regex-compat
-    bazRoute = l "baz" </> o
+    bazRoute = l_ "baz" </> o_
     bazHandle = do
       get $ text "baz!"
       let uploader req = do liftIO $ print =<< strictRequestBody req

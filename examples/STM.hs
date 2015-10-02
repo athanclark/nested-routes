@@ -48,15 +48,15 @@ main = do
   let routedApp app req resp = runReaderT (routeActionAuth authenticate routes app req resp) $ AuthEnv cacheVar uIdVar salt
       routes = do
         hereAction rootHandle
-        parent ("foo" </> o) $ do
+        parent ("foo" </> o_) $ do
           hereAction fooHandle
           auth ShouldBeLoggedIn unauthHandle DontProtectHere
-          handleAction ("bar" </> o) barHandle
+          handleAction ("bar" </> o_) barHandle
           handleAction doubleRoute doubleHandle
         handleAction emailRoute emailHandle
-        handleAction ("baz" </> o) bazHandle
-        handleAction ("login" </> o) loginHandle
-        parent ("logout" </> o) $ do
+        handleAction ("baz" </> o_) bazHandle
+        handleAction ("login" </> o_) loginHandle
+        parent ("logout" </> o_) $ do
           hereAction logoutHandle
           auth ShouldBeLoggedIn unauthHandle ProtectHere
         notFoundAction notFoundHandle
@@ -73,11 +73,11 @@ main = do
       json ("json bar!" :: LT.Text)
 
     -- `/foo/1234e12`
-    doubleRoute = p ("double", double) </> o
+    doubleRoute = p_ ("double", double) </> o_
     doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
     -- `/athan@foo.com`
-    emailRoute = r ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o
+    emailRoute = r_ ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
     emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
     -- `/baz`

@@ -41,13 +41,13 @@ class Singleton chunks a trie | chunks a -> trie where
 
 -- Basis
 instance Singleton (UrlChunks '[]) a (RootedPredTrie T.Text a) where
-  singleton Root r' = RootedPredTrie (Just r') emptyPT
+  singleton Root r = RootedPredTrie (Just r) emptyPT
 
 -- Successor
 instance ( Singleton (UrlChunks xs) a trie0
          , Extend (EitherUrlChunk x) trie0 trie1
          ) => Singleton (UrlChunks (x ': xs)) a trie1 where
-  singleton (Cons u us) r' = extend u (singleton us r')
+  singleton (Cons u us) r = extend u (singleton us r)
 
 
 -- | Turn a list of tries (@Rooted@) into a node with those children
@@ -62,9 +62,7 @@ instance Extend (EitherUrlChunk  'Nothing) (RootedPredTrie T.Text a) (RootedPred
 -- | Existentially quantified case
 instance Extend (EitherUrlChunk ('Just r)) (RootedPredTrie T.Text (r -> a)) (RootedPredTrie T.Text a) where
   extend ((:~) (i,q)) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
-    PredTrie mempty $ PredSteps [PredStep i (eitherToMaybe . parseOnly q) mx xs]
-  extend ((:*) (i,q)) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
-    PredTrie mempty $ PredSteps [PredStep i (matchRegex q . T.unpack) mx xs]
+    PredTrie mempty (PredSteps [PredStep i q mx xs])
 
 
 -- | @FoldR Extend start chunks ~ result@
@@ -73,20 +71,10 @@ class Extrude chunks start result | chunks start -> result where
 
 -- Basis
 instance Extrude (UrlChunks '[]) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
-  extrude Root r' = r'
+  extrude Root r = r
 
 -- Successor
 instance ( Extrude (UrlChunks xs) trie0 trie1
          , Extend (EitherUrlChunk x) trie1 trie2 ) => Extrude (UrlChunks (x ': xs)) trie0 trie2 where
-  extrude (Cons u us) r' = extend u (extrude us r')
+  extrude (Cons u us) r = extend u (extrude us r)
 
-
-eitherToMaybe :: Either String r -> Maybe r
-eitherToMaybe (Right r') = Just r'
-eitherToMaybe _         = Nothing
-
--- restAreLits :: UrlChunks xs -> Bool
--- restAreLits Root = False
--- restAreLits (Cons ((:=) _) Root) = True
--- restAreLits (Cons ((:=) _) us)   = restAreLits us
--- restAreLits (Cons _ _) = False

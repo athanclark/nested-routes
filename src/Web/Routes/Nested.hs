@@ -208,7 +208,7 @@ hereAction :: ( Monad m
               , HasResult err     (e -> ActionT ue u m ())
               ) => content
                 -> HandlerT content sec err (e,u,ue) m ()
-hereAction = handleAction o
+hereAction = handleAction origin_
 
 -- | Create a handle for the present route - an alias for @\h -> handle o (Just h)@.
 here :: ( Monad m
@@ -217,7 +217,7 @@ here :: ( Monad m
         , HasResult err     (e -> MiddlewareT m)
         ) => content
           -> HandlerT content sec err (e,u,ue) m ()
-here = handle o
+here = handle origin_
 
 
 handleAnyAction :: ( Monad m
@@ -226,7 +226,7 @@ handleAnyAction :: ( Monad m
                    , HasResult err     (e -> ActionT ue u m ())
                    ) => content
                      -> HandlerT content sec err (e,u,ue) m ()
-handleAnyAction vl = tell' (mempty, singleton o vl, mempty, mempty)
+handleAnyAction vl = tell' (mempty, singleton origin_ vl, mempty, mempty)
 
 -- | Match against any route, as a last resort against all failing @handle@s.
 handleAny :: ( Monad m
@@ -235,7 +235,7 @@ handleAny :: ( Monad m
              , HasResult err     (e -> MiddlewareT m)
              ) => content
                -> HandlerT content sec err (e,u,ue) m ()
-handleAny vl = tell' (mempty, singleton o vl, mempty, mempty)
+handleAny vl = tell' (mempty, singleton origin_ vl, mempty, mempty)
 
 
 -- | Prepend a path to an existing set of routes.
