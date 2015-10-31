@@ -104,7 +104,7 @@ Executable example
   Default-Language:     Haskell2010
   HS-Source-Dirs:       src
                       , examples
-  GHC-Options:          -Wall
+  GHC-Options:          -Wall -threaded
   Main-Is:              Main.hs
   Other-Modules:        Web.Routes.Nested
                         Web.Routes.Nested.Types

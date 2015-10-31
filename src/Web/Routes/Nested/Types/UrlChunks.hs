@@ -38,28 +38,32 @@ data EitherUrlChunk (x :: Maybe *) where
 instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
   fromString = literal_ . T.pack
 
+
+o_, origin_ :: UrlChunks '[]
 o_ = origin_
 
 -- | The /Origin/ chunk - the equivalent to @[]@
-origin_ :: UrlChunks '[]
 origin_ = Root
 
+
+l_, literal_ :: T.Text -> EitherUrlChunk 'Nothing
 l_ = literal_
 
 -- | Match against a /Literal/ chunk
-literal_ :: T.Text -> EitherUrlChunk 'Nothing
 literal_ = (:=)
 
+
+p_, parse_ :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
 p_ = parse_
 
 -- | Match against a /Parsed/ chunk, with <https://hackage.haskell.org/package/attoparsec attoparsec>.
-parse_ :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
 parse_ (i,q) = (:~) (i, eitherToMaybe . parseOnly q)
 
+
+r_, regex_ :: (T.Text, Regex) -> EitherUrlChunk ('Just [String])
 r_ = regex_
 
 -- | Match against a /Regular expression/ chunk, with <https://hackage.haskell.org/package/regex-compat regex-compat>.
-regex_ :: (T.Text, Regex) -> EitherUrlChunk ('Just [String])
 regex_ (i,q) = (:~) (i, matchRegex q . T.unpack)
 
 -- | Match with a predicate against the url chunk directly.
