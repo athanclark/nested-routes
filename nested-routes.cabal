@@ -180,4 +180,4 @@ Executable example-stm
 
 Source-Repository head
   Type:                 git
-  Location:             git://github.com/athanclark/nested-routes.git
+  Location:             https://github.com/athanclark/nested-routes.git
