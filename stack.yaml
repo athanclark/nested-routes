@@ -1,6 +1,7 @@
 flags: {}
 packages:
 - '.'
+    
 extra-deps:
   - composition-extra-2.0.0
   - tries-0.0.2

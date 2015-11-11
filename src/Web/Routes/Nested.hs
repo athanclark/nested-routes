@@ -112,6 +112,7 @@ import           Data.Trie.Pred.Step                (PredStep (..), PredSteps (.
 import qualified Data.Trie.Class                    as TC
 import           Data.Trie.Map                      (MapStep (..))
 import qualified Data.Map                           as Map
+import           Data.List                          (stripPrefix)
 import           Data.List.NonEmpty                 (NonEmpty (..))
 import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
@@ -365,13 +366,13 @@ extractContent :: ( Functor m
                     -> MiddlewareT m
 extractContent hs app req respond = do
   (trie,_,_,_) <- execHandlerT hs
-  case lookupWithLRPT trimFileExt (pathInfo req) trie of
+  case matchWithLRPT trimFileExt (pathInfo req) trie of
     Nothing -> fromMaybe (app req respond) $ do
       guard $ not . null $ pathInfo req
       guard $ trimFileExt (last $ pathInfo req) == "index"
       mid <- TC.lookup (init $ pathInfo req) trie
-      Just $    mid app req respond
-    Just mid -> mid app req respond
+      Just $    mid app (adjustPathInfo (init $ pathInfo req) req) respond
+    Just (prefix,mid) -> mid app (adjustPathInfo prefix req) respond
 
 
 -- | Find the security tokens / authorization roles affiliated with
@@ -401,8 +402,9 @@ extractAuth authorize hs app req respond = do
   (f,me) <- authorize req ss
   fromMaybe (app req (respond . f)) $ do
     e <- me
-    (_,mid,_) <- PT.matchRPT (pathInfo req) trie
-    return $ mid e app req (respond . f)
+    (prefix,mid,_) <- PT.matchRPT (pathInfo req) trie
+    return $ mid e app (adjustPathInfo prefix req) (respond . f)
+
 
 -- | Extracts only the @notFound@ responses into a @MiddlewareT@.
 extractNotFound :: ( Functor m
@@ -424,12 +426,8 @@ extractNearestVia :: ( Functor m
 extractNearestVia extr hs app req respond = do
   trie <- extr hs
   maybe (app req respond)
-        (\mid -> mid app req respond)
-      $ getResultsFromMatch <$> PT.matchRPT (pathInfo req) trie
-
-
-getResultsFromMatch :: ([s],a,[s]) -> a
-getResultsFromMatch (_,x,_) = x
+        (\(prefix, mid,_) -> mid app (adjustPathInfo prefix req) respond)
+      $ PT.matchRPT (pathInfo req) trie
 
 
 
@@ -460,28 +458,38 @@ trimFileExt s =
 
 -- | A quirky function for processing the last element of a lookup path, only
 -- on /literal/ matches.
-lookupWithLPT :: Ord s => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe a
-lookupWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
+matchWithLPT :: Ord s => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
+matchWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
   | null ts   = getFirst $ First (goLit (f t) ls) <> foldMap (First . goPred) ps
   | otherwise = getFirst $ First (goLit    t  ls) <> foldMap (First . goPred) ps
   where
     goLit t' xs = do
       (mx,mxs) <- Map.lookup t' xs
       if null ts
-      then mx
-      else lookupWithLPT f (NE.fromList ts) =<< mxs
+      then ([t],) <$> mx
+      else (\(ts',x) -> (t:ts',x)) <$> (matchWithLPT f (NE.fromList ts) =<< mxs)
+
+-- TODO: Need `match` for Map? idk actually, `t` should be enough for this step.
 
     goPred (PredStep _ predicate mx xs) = do
       d <- predicate t
       if null ts
-      then mx <$~> d
-      else lookupWithLPT f (NE.fromList ts) xs <$~> d
+      then ([t],) <$> (mx <$~> d)
+      else (\(ts',x) -> (t:ts',x d)) <$> (matchWithLPT f (NE.fromList ts) xs)
 
-lookupWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe a
-lookupWithLRPT _ [] (RootedPredTrie mx _) = mx
-lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (NE.fromList ts) xs
+matchWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
+matchWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
+matchWithLRPT f ts (RootedPredTrie _ xs) = matchWithLPT f (NE.fromList ts) xs
+
 
 tell' :: (Monoid w, S.MonadState w m) => w -> m ()
 tell' x = do
   xs <- S.get
   S.put $ xs <> x
+
+
+adjustPathInfo :: [T.Text] -> Request -> Request
+adjustPathInfo matched req' =
+  req' { pathInfo = fromMaybe (error "non-prefix on match") $
+                      stripPrefix matched (pathInfo req')
+       }

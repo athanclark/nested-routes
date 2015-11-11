@@ -29,15 +29,6 @@ import Data.String (IsString (..))
 import qualified Data.Text as T
 
 
--- | Constrained to AttoParsec, Regex-Compat and T.Text
-data EitherUrlChunk (x :: Maybe *) where
-  (:=) :: T.Text                      -> EitherUrlChunk 'Nothing
-  (:~) :: (T.Text, T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
-
--- | Use raw strings instead of prepending @l@
-instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
-  fromString = literal_ . T.pack
-
 
 o_, origin_ :: UrlChunks '[]
 o_ = origin_
@@ -70,17 +61,32 @@ regex_ (i,q) = (:~) (i, matchRegex q . T.unpack)
 pred_ :: (T.Text, T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
 pred_ = (:~)
 
--- | Prefix a routable path by more predicative lookup data.
-(</>) :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs)
-(</>) = Cons
 
-infixr 9 </>
+-- | Constrained to AttoParsec, Regex-Compat and T.Text
+data EitherUrlChunk (x :: Maybe *) where
+  (:=) :: T.Text                      -> EitherUrlChunk 'Nothing
+  (:~) :: (T.Text, T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
+
+-- | Use raw strings instead of prepending @l@
+instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
+  fromString = literal_ . T.pack
+
 
 -- | Container when defining route paths
 data UrlChunks (xs :: [Maybe *]) where
   Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- stack is left-to-right
   Root :: UrlChunks '[]
 
+
+
+-- | Prefix a routable path by more predicative lookup data.
+(</>) :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs)
+(</>) = Cons
+
+infixr 9 </>
+
+
+-- Utils
 
 eitherToMaybe :: Either String r -> Maybe r
 eitherToMaybe (Right r') = Just r'
