@@ -47,10 +47,10 @@ defApp :: Application
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
 main :: IO ()
-main = run 3000 $ \req respond ->
-  (\app ->  (routeAuth authorize routes app req respond)
-    `catch` (\e -> handleUploadError e app req respond)
-    `catch` (\e -> handleAuthError e app req respond)
+main = run 3000 $
+  (routeAuth authorize routes
+  `catchMiddlewareT` handleUploadError
+  `catchMiddlewareT` handleAuthError
   ) defApp
 
 
@@ -73,6 +73,7 @@ data UploadError = NoChunkedBody
   deriving (Show, Typeable)
 
 instance Exception UploadError
+
 
 routes :: ( MonadIO m
           , MonadThrow m

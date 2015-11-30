@@ -81,6 +81,7 @@ module Web.Routes.Nested
   , matchGroup
   , auth
   , action
+  , catchMiddlewareT
   -- * Routing
   , route
   , routeAuth
@@ -238,6 +239,13 @@ auth token scope =
         , mempty
         , singleton origin_ (token,scope)
         )
+
+
+catchMiddlewareT :: ( MonadCatch m
+                    , Exception e
+                    ) => MiddlewareT m -> (e -> MiddlewareT m) -> MiddlewareT m
+catchMiddlewareT xs f app req respond =
+  (xs app req respond) `catch` (\e -> f e app req respond)
 
 
 -- * Routing ---------------------------------------
