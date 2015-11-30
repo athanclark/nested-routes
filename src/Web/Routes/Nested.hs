@@ -13,55 +13,55 @@
   , GeneralizedNewtypeDeriving
   #-}
 
--- |
--- Module      : Web.Routes.Nested
--- Copyright   : (c) 2015 Athan Clark
---
--- License     : BSD-style
--- Maintainer  : athan.clark@gmail.com
--- Stability   : experimental
--- Portability : GHC
---
--- This module exports most of what you'll need for sophisticated routing -
--- all the tools from <https://hackage.haskell.org/package/wai-middleware-verbs wai-middleware-verbs>
--- (routing for the incoming HTTP method) and
--- <https://hackage.haskell.org/package/wai-middleware-content-type wai-middleware-content-type>
--- (routing for the incoming Accept header, and implied file extension),
--- <https://hackage.haskell.org/package/wai WAI> itself, and
--- <https://hackage.haskell.org/package/wai-transformers wai-transformers> - some simple
--- type aliases wrapped around WAI's @Application@ and @Middleware@ types, allowing us
--- to embed monad transformer stacks for our applications.
---
--- The routing system lets you embed these complicated HTTP verb / content-type
--- sensative responses just as easily as a WAI @Middleware@. There is enough
--- tooling provided to use one paradigm or the other. Note - nested-routes
--- does not affect the @pathInfo@ of the incoming @Request@ in any way, but merely
--- matches on it and passes control to the designated response.
---
--- To match a route, you have a few options - you can match against a string literal,
--- a regular expression (via <https://hackage.haskell.org/package/regex-compat regex-compat>),
--- or an <https://hackage.haskell.org/package/attoparsec attoparsec> parser. This list
--- will most likely grow in the future, depending on demand.
---
--- There is also support for embedding security layers in your routes, in the same
--- nested manner. By "tagging" a set of routes with an authorization role (with @auth@),
--- you populate a list of roles breached during any request. In the authentication
--- parameter in @routeAuth@ and @routeActionAuth@, the function
--- keeps the session integrity in-place, while @auth@ lets you create your authorization
--- boundaries. Both are symbiotic and neccessary for establishing security, and both allow
--- you to tap into the monad transformer stack to do logging, STM, database queries,
--- etc.
---
--- To use your set of routes in a WAI application, you need to "extract" the
--- functionality from your route set - using the @route@, @routeAuth@, @routeAction@,
--- and @routeActionAuth@
--- functions, you can create monolithic apps very easily.
--- But, if you would like to extract the security middleware to place before
--- say, a /static/ middleware you already have in place, use the @extractAuth@
--- functions, and others for their respective purposes. This way, you can decompose
--- the routing system into each subject matter, and re-compose (@.@) them in whichever
--- order you like for your application.
+{- |
+Module      : Web.Routes.Nested
+Copyright   : (c) 2015 Athan Clark
 
+License     : BSD-style
+Maintainer  : athan.clark@gmail.com
+Stability   : experimental
+Portability : GHC
+
+This module exports most of what you'll need for sophisticated routing -
+all the tools from <https://hackage.haskell.org/package/wai-middleware-verbs wai-middleware-verbs>
+(routing for the incoming HTTP method) and
+<https://hackage.haskell.org/package/wai-middleware-content-type wai-middleware-content-type>
+(routing for the incoming Accept header, and implied file extension),
+<https://hackage.haskell.org/package/wai WAI> itself, and
+<https://hackage.haskell.org/package/wai-transformers wai-transformers> - some simple
+type aliases wrapped around WAI's @Application@ and @Middleware@ types, allowing us
+to embed monad transformer stacks for our applications.
+
+The routing system lets you embed these complicated HTTP verb / content-type
+sensative responses just as easily as a WAI @Middleware@. There is enough
+tooling provided to use one paradigm or the other. Note - nested-routes
+does not affect the @pathInfo@ of the incoming @Request@ in any way, but merely
+matches on it and passes control to the designated response.
+
+To match a route, you have a few options - you can match against a string literal,
+a regular expression (via <https://hackage.haskell.org/package/regex-compat regex-compat>),
+or an <https://hackage.haskell.org/package/attoparsec attoparsec> parser. This list
+will most likely grow in the future, depending on demand.
+
+There is also support for embedding security layers in your routes, in the same
+nested manner. By "tagging" a set of routes with an authorization role (with @auth@),
+you populate a list of roles breached during any request. In the authentication
+parameter in @routeAuth@ and @routeActionAuth@, the function
+keeps the session integrity in-place, while @auth@ lets you create your authorization
+boundaries. Both are symbiotic and neccessary for establishing security, and both allow
+you to tap into the monad transformer stack to do logging, STM, database queries,
+etc.
+
+To use your set of routes in a WAI application, you need to "extract" the
+functionality from your route set - using the @route@, @routeAuth@, @routeAction@,
+and @routeActionAuth@
+functions, you can create monolithic apps very easily.
+But, if you would like to extract the security middleware to place before
+say, a /static/ middleware you already have in place, use the @extractAuth@
+functions, and others for their respective purposes. This way, you can decompose
+the routing system into each subject matter, and re-compose (@.@) them in whichever
+order you like for your application.
+-}
 
 
 module Web.Routes.Nested
@@ -78,7 +78,7 @@ module Web.Routes.Nested
   , match
   , matchHere
   , matchAny
-  , group
+  , matchGroup
   , auth
   , action
   -- * Routing
@@ -103,7 +103,6 @@ import           Data.Trie.Pred.Step                (PredStep (..), PredSteps (.
 import qualified Data.Trie.Class                    as TC
 import           Data.Trie.Map                      (MapStep (..))
 import qualified Data.Map                           as Map
-import           Data.List                          (stripPrefix)
 import           Data.List.NonEmpty                 (NonEmpty (..))
 import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
@@ -116,37 +115,36 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import qualified Control.Monad.State                as S
+import           Control.Monad.Catch
 
 
-type Tries x s e = ( RootedPredTrie T.Text x
-                   , RootedPredTrie T.Text x
-                   , RootedPredTrie T.Text s
-                   , RootedPredTrie T.Text e
-                   )
+type Tries x s = ( RootedPredTrie T.Text x
+                 , RootedPredTrie T.Text x
+                 , RootedPredTrie T.Text s
+                 )
 
-newtype HandlerT x sec err aux m a = HandlerT
-  { runHandlerT :: S.StateT (Tries x sec err) m a }
+newtype HandlerT x sec m a = HandlerT
+  { runHandlerT :: S.StateT (Tries x sec) m a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadIO
            , MonadTrans
-           , S.MonadState (Tries x sec err)
+           , S.MonadState (Tries x sec)
            )
 
-execHandlerT :: Monad m => HandlerT x sec err aux m a -> m (Tries x sec err)
+execHandlerT :: Monad m => HandlerT x sec m a -> m (Tries x sec)
 execHandlerT hs = S.execStateT (runHandlerT hs) mempty
 
-type ActionT e u m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
+type ActionT m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
 
 -- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
 -- route sets cooperate with the content-type and verb combinators.
-action :: MonadIO m => ActionT e u m () -> MiddlewareT m
+action :: MonadIO m => ActionT m () -> MiddlewareT m
 action xs = verbsToMiddleware $ mapVerbs fileExtsToMiddleware xs
 
 
-type RoutableT s e u ue m a =
-  HandlerT (MiddlewareT m) (s, AuthScope) (e -> MiddlewareT m) (e,u,ue) m a
+type RoutableT s m a = HandlerT (MiddlewareT m) (s, AuthScope) m a
 
 type ExtrudeSoundly cleanxs xs c r =
   ( cleanxs ~ CatMaybes xs
@@ -176,7 +174,6 @@ type ExtrudeSoundly cleanxs xs c r =
 --   then we would need another variable of arity /before/ the @Double@.
 match :: ( Monad m
          , HasResult childContent (MiddlewareT m)
-         , HasResult err     (e -> MiddlewareT m)
          , Singleton (UrlChunks xs)
              childContent
              (RootedPredTrie T.Text resultContent)
@@ -184,16 +181,15 @@ match :: ( Monad m
          , ArityTypeListIso childContent cleanxs resultContent
          ) => UrlChunks xs
            -> childContent
-           -> HandlerT resultContent sec err (e,u,ue) m ()
-match ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
+           -> HandlerT resultContent sec m ()
+match ts vl = tell' (singleton ts vl, mempty, mempty)
 
 
 -- | Create a handle for the /current/ route - an alias for @\h -> match o_ handle@.
 matchHere :: ( Monad m
              , HasResult content (MiddlewareT m)
-             , HasResult err     (e -> MiddlewareT m)
              ) => content
-               -> HandlerT content sec err (e,u,ue) m ()
+               -> HandlerT content sec m ()
 matchHere = match origin_
 
 
@@ -202,29 +198,26 @@ matchHere = match origin_
 --   like a @not-found 404@ page is useful.
 matchAny :: ( Monad m
             , HasResult content (MiddlewareT m)
-            , HasResult err     (e -> MiddlewareT m)
             ) => content
-              -> HandlerT content sec err (e,u,ue) m ()
-matchAny vl = tell' (mempty, singleton origin_ vl, mempty, mempty)
+              -> HandlerT content sec m ()
+matchAny vl = tell' (mempty, singleton origin_ vl, mempty)
 
 
 -- | Prepends a common route to an existing set of routes. You should note that
 --   doing this with a parser or regular expression will necessitate the existing
 --   arity in the handlers before the progam can compile.
-group :: ( Monad m
-         , cleanxs ~ CatMaybes xs
-         , ExtrudeSoundly cleanxs xs childContent resultContent
-         , ExtrudeSoundly cleanxs xs childSec     resultSec
-         , ExtrudeSoundly cleanxs xs childErr     resultErr
-         ) => UrlChunks xs
-           -> HandlerT childContent  childSec  childErr  aux m ()
-           -> HandlerT resultContent resultSec resultErr aux m ()
-group ts cs = do
-  (trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
+matchGroup :: ( Monad m
+              , cleanxs ~ CatMaybes xs
+              , ExtrudeSoundly cleanxs xs childContent resultContent
+              , ExtrudeSoundly cleanxs xs childSec     resultSec
+              ) => UrlChunks xs
+                -> HandlerT childContent  childSec  m ()
+                -> HandlerT resultContent resultSec m ()
+matchGroup ts cs = do
+  (trieContent,trieNotFound,trieSec) <- lift $ execHandlerT cs
   tell' ( extrude ts trieContent
         , extrude ts trieNotFound
         , extrude ts trieSec
-        , extrude ts trieErr
         )
 
 
@@ -238,24 +231,20 @@ data AuthScope = ProtectHere | DontProtectHere
 -- including its parent route.
 auth :: ( Monad m
         ) => sec
-          -> err
           -> AuthScope
-          -> HandlerT content (sec, AuthScope) err aux m ()
-auth token handleFail scope =
+          -> HandlerT content (sec, AuthScope) m ()
+auth token scope =
   tell' ( mempty
         , mempty
         , singleton origin_ (token,scope)
-        , singleton origin_ handleFail
         )
 
 
 -- * Routing ---------------------------------------
 
 -- | Turns a @HandlerT@ containing @MiddlewareT@s into a @MiddlewareT@.
-route :: ( Functor m
-         , Monad m
-         , MonadIO m
-         ) => HandlerT (MiddlewareT m) sec err aux m () -- ^ Assembled @handle@ calls
+route :: ( MonadIO m
+         ) => HandlerT (MiddlewareT m) sec m () -- ^ Assembled @handle@ calls
            -> MiddlewareT m
 route hs = extractMatch hs . extractMatchAny hs
 
@@ -263,11 +252,10 @@ route hs = extractMatch hs . extractMatchAny hs
 -- | Given a security verification function that returns a method to updating the session,
 -- turn a set of routes containing @MiddlewareT@s into a @MiddlewareT@, where a session
 -- is secured before responding.
-routeAuth :: ( Functor m
-             , Monad m
-             , MonadIO m
-             ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- ^ authorize
-               -> RoutableT sec e u ue m () -- ^ Assembled @handle@ calls
+routeAuth :: ( MonadIO m
+             , MonadThrow m
+             ) => (Request -> [sec] -> m (Response -> Response)) -- ^ authorize
+               -> RoutableT sec m () -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
 
@@ -278,35 +266,35 @@ routeAuth authorize hs = extractAuth authorize hs . route hs
 -- | Extracts only the normal 'match' and 'matchHere' (exactly matching content) routes into
 -- a @MiddlewareT@, disregarding security and not-found responses.
 extractMatch :: ( MonadIO m
-                ) => HandlerT (MiddlewareT m) sec err aux m a
+                ) => HandlerT (MiddlewareT m) sec m a
                   -> MiddlewareT m
 extractMatch hs app req respond = do
-  (trie,_,_,_) <- execHandlerT hs
+  (trie,_,_) <- execHandlerT hs
   case matchWithLRPT trimFileExt (pathInfo req) trie of
     Nothing -> fromMaybe (app req respond) $ do
       guard $ not . null $ pathInfo req
       guard $ trimFileExt (last $ pathInfo req) == "index"
       mid <- TC.lookup (init $ pathInfo req) trie
       Just $    mid app req respond
-    Just (prefix,mid) -> mid app (adjustPathInfo prefix req) respond
+    Just (_,mid) -> mid app req respond
 
 
 -- | Extracts only the @notFound@ responses into a @MiddlewareT@.
 extractMatchAny :: ( MonadIO m
-                   ) => HandlerT (MiddlewareT m) sec err aux m a
+                   ) => HandlerT (MiddlewareT m) sec m a
                      -> MiddlewareT m
-extractMatchAny = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
+extractMatchAny = extractNearestVia (execHandlerT >=> \(_,t,_) -> return t)
 
 
 
 -- | Find the security tokens / authorization roles affiliated with
 -- a request for a set of routes.
 extractAuthSym :: ( Monad m
-                  ) => HandlerT x (sec, AuthScope) err aux m a
+                  ) => HandlerT x (sec, AuthScope) m a
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
-  (_,_,trie,_) <- execHandlerT hs
+  (_,_,trie) <- execHandlerT hs
   return $ foldl go [] (PT.matchesRPT (pathInfo req) trie)
   where
     go ys (_,(_,DontProtectHere),[]) = ys
@@ -314,29 +302,26 @@ extractAuthSym hs req = do
 
 -- | Extracts only the security handling logic into a @MiddlewareT@.
 extractAuth :: ( MonadIO m
-               ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- authorization method
-                 -> HandlerT x (sec, AuthScope) (e -> MiddlewareT m) aux m a
+               , MonadThrow m
+               ) => (Request -> [sec] -> m (Response -> Response)) -- authorization method
+                 -> HandlerT x (sec, AuthScope) m a
                  -> MiddlewareT m
 extractAuth authorize hs app req respond = do
-  (_,_,_,trie) <- execHandlerT hs
   ss <- extractAuthSym hs req
-  (f,me) <- authorize req ss
-  fromMaybe (app req (respond . f)) $ do
-    e <- me
-    (prefix,mid,_) <- PT.matchRPT (pathInfo req) trie
-    return $ mid e app (adjustPathInfo prefix req) (respond . f)
+  f <- authorize req ss
+  app req (respond . f)
 
 
 -- | Given a way to draw out a special-purpose trie from our route set, route
 -- to the responses based on a /furthest-reached/ method.
 extractNearestVia :: ( MonadIO m
-                     ) => (HandlerT (MiddlewareT m) sec err aux m a -> m (RootedPredTrie T.Text (MiddlewareT m)))
-                       -> HandlerT (MiddlewareT m) sec err aux m a
+                     ) => (HandlerT (MiddlewareT m) sec m a -> m (RootedPredTrie T.Text (MiddlewareT m)))
+                       -> HandlerT (MiddlewareT m) sec m a
                        -> MiddlewareT m
 extractNearestVia extr hs app req respond = do
   trie <- extr hs
   maybe (app req respond)
-        (\(prefix, mid,_) -> mid app (adjustPathInfo prefix req) respond)
+        (\(_,mid,_) -> mid app req respond)
       $ PT.matchRPT (pathInfo req) trie
 
 
@@ -379,9 +364,3 @@ tell' x = do
   xs <- S.get
   S.put $ xs <> x
 
-
-adjustPathInfo :: [T.Text] -> Request -> Request
-adjustPathInfo matched req' =
-  req' { pathInfo = fromMaybe (error "non-prefix on match") $
-                      stripPrefix matched (pathInfo req')
-       }

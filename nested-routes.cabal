@@ -48,6 +48,7 @@ Library
                       , bytestring
                       , composition-extra >= 2.0.0
                       , containers
+                      , exceptions
                       , mtl
                       , poly-arity >= 0.0.7
                       , pred-trie >= 0.3
@@ -57,8 +58,8 @@ Library
                       , transformers
                       , tries
                       , wai-transformers >= 0.0.3
-                      , wai-middleware-content-type >= 0.0.5
-                      , wai-middleware-verbs >= 0.0.6
+                      , wai-middleware-content-type >= 0.1.0
+                      , wai-middleware-verbs >= 0.1.0
 
 
 Test-Suite test
@@ -110,11 +111,12 @@ Executable example
                         Web.Routes.Nested.Types
                         Web.Routes.Nested.Types.UrlChunks
   Build-Depends:        base
-                      , nested-routes
+                      , nested-routes >= 7
                       , attoparsec
                       , bytestring
                       , composition-extra
                       , containers
+                      , exceptions
                       , http-types
                       , mtl
                       , poly-arity

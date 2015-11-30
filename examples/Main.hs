@@ -2,6 +2,8 @@
     OverloadedStrings
   , ScopedTypeVariables
   , FlexibleContexts
+  , DeriveDataTypeable
+  , DataKinds
   #-}
 
 
@@ -12,14 +14,19 @@ import Network.Wai.Trans
 import Network.Wai.Handler.Warp
 import Network.HTTP.Types
 import           Text.Regex
+import qualified Data.Text      as T
 import qualified Data.Text.Lazy as LT
-import           Data.Attoparsec.Text
+import           Data.Attoparsec.Text hiding (match)
 import Data.Monoid
-import Control.Monad.Except
+import Data.Typeable
+import Control.Monad.IO.Class
+import Control.Monad.Catch
 
 
-data AuthRole = AuthRole deriving (Show, Eq)
-data AuthErr = NeedsAuth deriving (Show, Eq)
+data AuthRole  = AuthRole deriving (Show, Eq)
+data AuthError = NeedsAuth deriving (Show, Eq, Typeable)
+
+instance Exception AuthError
 
 -- | If you fail here and throw an AuthErr, then the user was not authorized to
 -- under the conditions set by @ss :: [AuthRole]@, and based o_n the authentication
@@ -31,55 +38,99 @@ data AuthErr = NeedsAuth deriving (Show, Eq)
 -- so a guest just returns Nothing, and we could handle the case in @putAuth@ to
 -- not do anything.
 authorize :: ( Monad m
-             ) => Request -> [AuthRole] -> m (Response -> Response, Maybe AuthErr)
-authorize _ _ = return (id, Nothing) -- uncomment to force constant authorization
--- authorize req ss | null ss   = return (id, Nothing)
---                  | otherwise = return (id, Just NeedsAuth)
+             , MonadThrow m
+             ) => Request -> [AuthRole] -> m (Response -> Response)
+authorize req ss | null ss   = return id
+                 | otherwise = throwM NeedsAuth
 
 defApp :: Application
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
 main :: IO ()
-main =
-  let app = routeActionAuth authorize routes
-      routes = do
-        hereAction rootHandle
-        parent ("foo" </> o_) $ do
-          hereAction fooHandle
-          auth AuthRole unauthHandle DontProtectHere
-          handleAction ("bar" </> o_) barHandle
-          handleAction (p_ ("double", double) </> o_) doubleHandle
-        handleAction emailRoute emailHandle
-        handleAction ("baz" </> o_) bazHandle
-        notFoundAction notFoundHandle
-  in run 3000 $ app defApp
+main = run 3000 $ \req respond ->
+  (\app ->  (routeAuth authorize routes app req respond)
+    `catch` (\e -> handleUploadError e app req respond)
+    `catch` (\e -> handleAuthError e app req respond)
+  ) defApp
+
+
+handleUploadError :: ( MonadIO m
+                     ) => UploadError -> MiddlewareT m
+handleUploadError u = fileExtsToMiddleware $
+  case u of
+    NoChunkedBody  -> text "No chunked body allowed!"
+    UploadTooLarge -> text "Upload too large"
+
+handleAuthError :: ( MonadIO m
+                   ) => AuthError -> MiddlewareT m
+handleAuthError e = fileExtsToMiddleware $
+  case e of
+    NeedsAuth -> text "Authentication needed"
+
+
+data UploadError = NoChunkedBody
+                 | UploadTooLarge
+  deriving (Show, Typeable)
+
+instance Exception UploadError
+
+routes :: ( MonadIO m
+          , MonadThrow m
+          ) => RoutableT AuthRole m ()
+routes = do
+  matchHere (action rootHandle)
+  matchGroup ("foo" </> o_) $ do
+    matchHere (action fooHandle)
+    auth AuthRole DontProtectHere
+    match ("bar" </> o_) (action barHandle)
+    match (p_ ("double", double) </> o_) doubleHandle
+  match emailRoute emailHandle
+  match ("baz" </> o_) (action bazHandle)
+  matchAny (action notFoundHandle)
   where
-    rootHandle = get $ text "Home"
+    rootHandle :: MonadIO m => ActionT m ()
+    rootHandle =
+      get $ do
+        text "Home"
+        json ("Home" :: T.Text)
 
     -- `/foo`
+    fooHandle :: MonadIO m => ActionT m ()
     fooHandle = get $ text "foo!"
 
     -- `/foo/bar`
-    barHandle = get $ do
-      text "bar!"
-      json ("json bar!" :: LT.Text)
+    barHandle :: MonadIO m => ActionT m ()
+    barHandle =
+      get $ do
+        text "bar!"
+        json ("json bar!" :: T.Text)
 
     -- `/foo/1234e12`, uses attoparsec
-    doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
+    doubleHandle :: MonadIO m => Double-> MiddlewareT m
+    doubleHandle d = action $ get $ text $ LT.pack (show d) <> " foos"
 
     -- `/athan@foo.com`
+    emailRoute :: UrlChunks '[ 'Just [String] ]
     emailRoute = r_ ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
-    emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
-    -- `/baz`, uses regex-compat
+    emailHandle :: MonadIO m => [String] -> MiddlewareT m
+    emailHandle e = action $ get $ text $ LT.pack (show e) <> " email"
+
+    -- `/baz
+    bazHandle :: ( MonadIO m
+                 , MonadThrow m
+                 ) => ActionT m ()
     bazHandle = do
       get $ text "baz!"
-      let uploader req = do liftIO $ print =<< strictRequestBody req
-                            return ()
-          uploadHandle (Left Nothing)  = text "Upload Failed"
-          uploadHandle (Left (Just _)) = text "Impossible - no errors thrown in uploader"
-          uploadHandle (Right ())      = text "Woah! Upload content!"
-      post uploader uploadHandle
+      post uploader $ text "uploaded!"
+      where
+        uploader :: (MonadIO m, MonadThrow m) => Request -> m ()
+        uploader req =
+          case requestBodyLength req of
+                 ChunkedBody               -> throwM NoChunkedBody
+                 KnownLength l | l > 1024  -> throwM UploadTooLarge
+                               | otherwise -> liftIO $ print =<< strictRequestBody req
 
-    unauthHandle NeedsAuth = get $ textStatus status401 "Unauthorized!"
+
+    notFoundHandle :: MonadIO m => ActionT m ()
     notFoundHandle = get $ textStatus status404 "Not Found :("

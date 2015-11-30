@@ -7,6 +7,16 @@
   , OverloadedStrings
   #-}
 
+{- |
+Module      : Web.Routes.Nested
+Copyright   : (c) 2015 Athan Clark
+
+License     : BSD-style
+Maintainer  : athan.clark@gmail.com
+Stability   : experimental
+Portability : GHC
+-}
+
 module Web.Routes.Nested.Types.UrlChunks
   ( -- * Path Combinators
     o_
