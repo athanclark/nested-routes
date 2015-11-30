@@ -158,9 +158,6 @@ action xs = verbsToMiddleware $ mapVerbs fileExtsToMiddleware xs
 type RoutableT s e u ue m a =
   HandlerT (MiddlewareT m) (s, AuthScope) (e -> MiddlewareT m) (e,u,ue) m a
 
-type RoutableActionT s e u ue m a =
-  HandlerT (ActionT ue u m ()) (s, AuthScope) (e -> ActionT ue u m ()) (e,u,ue) m a
-
 type ExtrudeSoundly cleanxs xs c r =
   ( cleanxs ~ CatMaybes xs
   , ArityTypeListIso c cleanxs r
@@ -168,23 +165,6 @@ type ExtrudeSoundly cleanxs xs c r =
       (RootedPredTrie T.Text c)
       (RootedPredTrie T.Text r)
   )
-
-
--- | Embed an @ActionT@ into a set of routes directly, without first converting
--- it to a @MiddlewareT@.
-handleAction :: ( Monad m
-                , Functor m
-                , HasResult childContent (ActionT ue u m ())
-                , HasResult err          (e -> ActionT ue u m ())
-                , Singleton (UrlChunks xs)
-                    childContent
-                    (RootedPredTrie T.Text resultContent)
-                , cleanxs ~ CatMaybes xs
-                , ArityTypeListIso childContent cleanxs resultContent
-                ) => UrlChunks xs
-                  -> childContent
-                  -> HandlerT resultContent sec err (e,u,ue) m ()
-handleAction ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
 
 
 -- | Embed a @MiddlewareT@ into a set of routes.
@@ -203,14 +183,6 @@ handle :: ( Monad m
 handle ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
 
 
-hereAction :: ( Monad m
-              , Functor m
-              , HasResult content (ActionT ue u m ())
-              , HasResult err     (e -> ActionT ue u m ())
-              ) => content
-                -> HandlerT content sec err (e,u,ue) m ()
-hereAction = handleAction origin_
-
 -- | Create a handle for the present route - an alias for @\h -> handle o (Just h)@.
 here :: ( Monad m
         , Functor m
@@ -220,14 +192,6 @@ here :: ( Monad m
           -> HandlerT content sec err (e,u,ue) m ()
 here = handle origin_
 
-
-handleAnyAction :: ( Monad m
-                   , Functor m
-                   , HasResult content (ActionT ue u m ())
-                   , HasResult err     (e -> ActionT ue u m ())
-                   ) => content
-                     -> HandlerT content sec err (e,u,ue) m ()
-handleAnyAction vl = tell' (mempty, singleton origin_ vl, mempty, mempty)
 
 -- | Match against any route, as a last resort against all failing @handle@s.
 handleAny :: ( Monad m
@@ -280,16 +244,6 @@ auth token handleFail scope =
         )
 
 
--- | Embed an @ActionT@ as a not-found handler into a set of routes, without first converting
--- it to a @MiddlewareT@.
-notFoundAction :: ( Monad m
-                  , Functor m
-                  , HasResult content (ActionT ue u m ())
-                  , HasResult err     (e -> ActionT ue u m ())
-                  ) => content
-                    -> HandlerT content sec err (e,u,ue) m ()
-notFoundAction = handleAnyAction
-
 -- | Embed a @MiddlewareT@ as a not-found handler into a set of routes.
 notFound :: ( Monad m
             , Functor m
@@ -323,36 +277,6 @@ routeAuth :: ( Functor m
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
 
--- | Exactly like @route@, except specialized to route sets that contain @ActionT@s -
--- essentially @fmap@ing @action@ to each element.
-routeAction :: ( Functor m
-               , Monad m
-               , MonadIO m
-               ) => RoutableActionT sec e u ue m ()
-                 -> MiddlewareT m
-routeAction = route . actionToMiddleware
-
--- | Exactly like @routeAuth@, but specialized for @ActionT@.
-routeActionAuth :: ( Functor m
-                   , Monad m
-                   , MonadIO m
-                   ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- ^ authorize
-                     -> RoutableActionT sec e u ue m () -- ^ Assembled @handle@ calls
-                     -> MiddlewareT m
-routeActionAuth authorize = routeAuth authorize . actionToMiddleware
-
-
--- | Turns a @HandlerT@ containing @ActionT@s into a @HandlerT@ containing @MiddlewareT@s.
-actionToMiddleware :: MonadIO m =>
-                      RoutableActionT sec e u ue m ()
-                   -> RoutableT sec e u ue m ()
-actionToMiddleware hs = do
-  (rtrie,nftrie,strie,errtrie) <- lift $ execHandlerT hs
-  tell' ( action <$> rtrie
-        , action <$> nftrie
-        , strie
-        , (action .) <$> errtrie
-        )
 
 
 -- * Extraction -------------------------------
@@ -435,25 +359,7 @@ extractNearestVia extr hs app req respond = do
 
 -- | Removes @.txt@ from @foo.txt@
 trimFileExt :: T.Text -> T.Text
-trimFileExt s =
-  let lastExt = getLastExt (T.unpack s)
-  in if lastExt `elem` possibleExts
-     then T.pack lastExt
-     else s
-  where
-    possibleExts = [ ".html",".htm",".txt",".json",".lucid"
-                   , ".julius",".css",".cassius",".lucius"
-                   ]
-    getLastExt ts = S.evalState (foldrM go [] ts) False
-      where
-        go c soFar = do
-          sawPeriod <- S.get
-          if sawPeriod
-          then return soFar
-          else if c == '.'
-               then do S.put True
-                       return ('.' : soFar)
-               else    return (c : soFar)
+trimFileExt s = fst (T.breakOn "." s)
 
 
 -- | A quirky function for processing the last element of a lookup path, only
