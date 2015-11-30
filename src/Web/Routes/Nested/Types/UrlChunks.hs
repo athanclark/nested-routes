@@ -1,9 +1,10 @@
 {-# LANGUAGE
-    KindSignatures
-  , GADTs
+    GADTs
+  , DataKinds
   , RankNTypes
   , TypeOperators
-  , DataKinds
+  , KindSignatures
+  , OverloadedStrings
   #-}
 
 module Web.Routes.Nested.Types.UrlChunks
@@ -12,6 +13,8 @@ module Web.Routes.Nested.Types.UrlChunks
   , origin_
   , l_
   , literal_
+  , f_
+  , file_
   , p_
   , parse_
   , r_
@@ -27,6 +30,7 @@ import Data.Attoparsec.Text
 import Text.Regex
 import Data.String (IsString (..))
 import qualified Data.Text as T
+import Control.Monad
 
 
 
@@ -42,6 +46,12 @@ l_ = literal_
 
 -- | Match against a /Literal/ chunk
 literal_ = (:=)
+
+f_, file_ :: T.Text -> EitherUrlChunk ('Just T.Text)
+f_ = file_
+
+-- | Removes file extension from the matched route
+file_ f = (:~) (f, \t -> t <$ guard (fst (T.breakOn "." t) == f))
 
 
 p_, parse_ :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)

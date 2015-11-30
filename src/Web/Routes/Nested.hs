@@ -72,33 +72,24 @@ module Web.Routes.Nested
   , execHandlerT
   , ActionT
   , RoutableT
-  , RoutableActionT
   , AuthScope (..)
   , ExtrudeSoundly
   -- * Combinators
-  , handle
-  , handleAction
-  , here
-  , hereAction
-  , handleAny
-  , handleAnyAction
-  , parent
+  , match
+  , matchHere
+  , matchAny
+  , group
   , auth
-  , notFound
-  , notFoundAction
   , action
   -- * Routing
   , route
   , routeAuth
-  , routeAction
-  , routeActionAuth
   -- * Extraction
-  , extractContent
-  , extractNotFound
+  , extractMatch
+  , extractMatchAny
   , extractAuthSym
   , extractAuth
   , extractNearestVia
-  , actionToMiddleware
   ) where
 
 import           Web.Routes.Nested.Types            as X
@@ -118,7 +109,6 @@ import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
 import           Data.Maybe                         (fromMaybe)
 import           Data.Monoid
-import           Data.Foldable
 import           Data.Functor.Syntax
 import           Data.Function.Poly
 
@@ -147,7 +137,7 @@ newtype HandlerT x sec err aux m a = HandlerT
 execHandlerT :: Monad m => HandlerT x sec err aux m a -> m (Tries x sec err)
 execHandlerT hs = S.execStateT (runHandlerT hs) mempty
 
-type ActionT e u m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) e u m a
+type ActionT e u m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
 
 -- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
 -- route sets cooperate with the content-type and verb combinators.
@@ -166,54 +156,70 @@ type ExtrudeSoundly cleanxs xs c r =
       (RootedPredTrie T.Text r)
   )
 
+-- | Embed a 'Network.Wai.Trans.MiddlewareT' into a set of routes via a matching string. You should
+--   expect the match to create /arity/ in your handler - the @childContent@ variable.
+--   The arity of @childContent@ may grow or shrink, depending on the heterogeneous
+--   list created from the list of parsers, regular expressions, or arbitrary predicates
+--   /in the order written/ - so something like:
+--
+--   > match (p_ ("double-parser", Data.Attoparsec.Text.double </> o_))
+--   >   handle
+--
+--   ...then @handle@ /must/ have an arity __ending__ in @Double ->@ - if this
+--   route was at the top level, then the total arity __must__ be @Double -> MiddlewareT m@.
+--   (notice 'Web.Routes.Nested.Types.HasResult' -
+--
+--   > HasResult childContent (MiddlewareT m)
+--
+--   Basically, if the routes you are building in the current scope get grouped
+--   by a predicate (which creates another data type to handle) with 'group',
+--   then we would need another variable of arity /before/ the @Double@.
+match :: ( Monad m
+         , HasResult childContent (MiddlewareT m)
+         , HasResult err     (e -> MiddlewareT m)
+         , Singleton (UrlChunks xs)
+             childContent
+             (RootedPredTrie T.Text resultContent)
+         , cleanxs ~ CatMaybes xs
+         , ArityTypeListIso childContent cleanxs resultContent
+         ) => UrlChunks xs
+           -> childContent
+           -> HandlerT resultContent sec err (e,u,ue) m ()
+match ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
 
--- | Embed a @MiddlewareT@ into a set of routes.
-handle :: ( Monad m
-          , Functor m
-          , HasResult childContent (MiddlewareT m)
-          , HasResult err     (e -> MiddlewareT m)
-          , Singleton (UrlChunks xs)
-              childContent
-              (RootedPredTrie T.Text resultContent)
-          , cleanxs ~ CatMaybes xs
-          , ArityTypeListIso childContent cleanxs resultContent
-          ) => UrlChunks xs
-            -> childContent
-            -> HandlerT resultContent sec err (e,u,ue) m ()
-handle ts vl = tell' (singleton ts vl, mempty, mempty, mempty)
 
-
--- | Create a handle for the present route - an alias for @\h -> handle o (Just h)@.
-here :: ( Monad m
-        , Functor m
-        , HasResult content (MiddlewareT m)
-        , HasResult err     (e -> MiddlewareT m)
-        ) => content
-          -> HandlerT content sec err (e,u,ue) m ()
-here = handle origin_
-
-
--- | Match against any route, as a last resort against all failing @handle@s.
-handleAny :: ( Monad m
-             , Functor m
+-- | Create a handle for the /current/ route - an alias for @\h -> match o_ handle@.
+matchHere :: ( Monad m
              , HasResult content (MiddlewareT m)
              , HasResult err     (e -> MiddlewareT m)
              ) => content
                -> HandlerT content sec err (e,u,ue) m ()
-handleAny vl = tell' (mempty, singleton origin_ vl, mempty, mempty)
+matchHere = match origin_
 
 
--- | Prepend a path to an existing set of routes.
-parent :: ( Monad m
-          , Functor m
-          , cleanxs ~ CatMaybes xs
-          , ExtrudeSoundly cleanxs xs childContent resultContent
-          , ExtrudeSoundly cleanxs xs childSec     resultSec
-          , ExtrudeSoundly cleanxs xs childErr     resultErr
-          ) => UrlChunks xs
-            -> HandlerT childContent  childSec  childErr  aux m ()
-            -> HandlerT resultContent resultSec resultErr aux m ()
-parent ts cs = do
+-- | Match against any route, as a last resort against all failing matches -
+--   most people use this for a catch-all at some level in their routes, something
+--   like a @not-found 404@ page is useful.
+matchAny :: ( Monad m
+            , HasResult content (MiddlewareT m)
+            , HasResult err     (e -> MiddlewareT m)
+            ) => content
+              -> HandlerT content sec err (e,u,ue) m ()
+matchAny vl = tell' (mempty, singleton origin_ vl, mempty, mempty)
+
+
+-- | Prepends a common route to an existing set of routes. You should note that
+--   doing this with a parser or regular expression will necessitate the existing
+--   arity in the handlers before the progam can compile.
+group :: ( Monad m
+         , cleanxs ~ CatMaybes xs
+         , ExtrudeSoundly cleanxs xs childContent resultContent
+         , ExtrudeSoundly cleanxs xs childSec     resultSec
+         , ExtrudeSoundly cleanxs xs childErr     resultErr
+         ) => UrlChunks xs
+           -> HandlerT childContent  childSec  childErr  aux m ()
+           -> HandlerT resultContent resultSec resultErr aux m ()
+group ts cs = do
   (trieContent,trieNotFound,trieSec,trieErr) <- lift $ execHandlerT cs
   tell' ( extrude ts trieContent
         , extrude ts trieNotFound
@@ -231,7 +237,6 @@ data AuthScope = ProtectHere | DontProtectHere
 -- | Sets the security role and error handler for a set of routes, optionally
 -- including its parent route.
 auth :: ( Monad m
-        , Functor m
         ) => sec
           -> err
           -> AuthScope
@@ -239,20 +244,9 @@ auth :: ( Monad m
 auth token handleFail scope =
   tell' ( mempty
         , mempty
-        , RootedPredTrie (Just (token,scope)) mempty
-        , RootedPredTrie (Just handleFail) mempty
+        , singleton origin_ (token,scope)
+        , singleton origin_ handleFail
         )
-
-
--- | Embed a @MiddlewareT@ as a not-found handler into a set of routes.
-notFound :: ( Monad m
-            , Functor m
-            , HasResult content (MiddlewareT m)
-            , HasResult err     (e -> MiddlewareT m)
-            ) => content
-              -> HandlerT content sec err (e,u,ue) m ()
-notFound = handleAny
-
 
 
 -- * Routing ---------------------------------------
@@ -263,7 +257,7 @@ route :: ( Functor m
          , MonadIO m
          ) => HandlerT (MiddlewareT m) sec err aux m () -- ^ Assembled @handle@ calls
            -> MiddlewareT m
-route hs = extractContent hs . extractNotFound hs
+route hs = extractMatch hs . extractMatchAny hs
 
 
 -- | Given a security verification function that returns a method to updating the session,
@@ -281,28 +275,33 @@ routeAuth authorize hs = extractAuth authorize hs . route hs
 
 -- * Extraction -------------------------------
 
--- | Extracts only the normal @handle@ (content) routes into
+-- | Extracts only the normal 'match' and 'matchHere' (exactly matching content) routes into
 -- a @MiddlewareT@, disregarding security and not-found responses.
-extractContent :: ( Functor m
-                  , Monad m
-                  , MonadIO m
-                  ) => HandlerT (MiddlewareT m) sec err aux m a
-                    -> MiddlewareT m
-extractContent hs app req respond = do
+extractMatch :: ( MonadIO m
+                ) => HandlerT (MiddlewareT m) sec err aux m a
+                  -> MiddlewareT m
+extractMatch hs app req respond = do
   (trie,_,_,_) <- execHandlerT hs
   case matchWithLRPT trimFileExt (pathInfo req) trie of
     Nothing -> fromMaybe (app req respond) $ do
       guard $ not . null $ pathInfo req
       guard $ trimFileExt (last $ pathInfo req) == "index"
       mid <- TC.lookup (init $ pathInfo req) trie
-      Just $    mid app (adjustPathInfo (init $ pathInfo req) req) respond
+      Just $    mid app req respond
     Just (prefix,mid) -> mid app (adjustPathInfo prefix req) respond
+
+
+-- | Extracts only the @notFound@ responses into a @MiddlewareT@.
+extractMatchAny :: ( MonadIO m
+                   ) => HandlerT (MiddlewareT m) sec err aux m a
+                     -> MiddlewareT m
+extractMatchAny = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
+
 
 
 -- | Find the security tokens / authorization roles affiliated with
 -- a request for a set of routes.
-extractAuthSym :: ( Functor m
-                  , Monad m
+extractAuthSym :: ( Monad m
                   ) => HandlerT x (sec, AuthScope) err aux m a
                     -> Request
                     -> m [sec]
@@ -314,9 +313,7 @@ extractAuthSym hs req = do
     go ys (_,(x,_              ),_ ) = ys ++ [x]
 
 -- | Extracts only the security handling logic into a @MiddlewareT@.
-extractAuth :: ( Functor m
-               , Monad m
-               , MonadIO m
+extractAuth :: ( MonadIO m
                ) => (Request -> [sec] -> m (Response -> Response, Maybe e)) -- authorization method
                  -> HandlerT x (sec, AuthScope) (e -> MiddlewareT m) aux m a
                  -> MiddlewareT m
@@ -330,20 +327,9 @@ extractAuth authorize hs app req respond = do
     return $ mid e app (adjustPathInfo prefix req) (respond . f)
 
 
--- | Extracts only the @notFound@ responses into a @MiddlewareT@.
-extractNotFound :: ( Functor m
-                   , Monad m
-                   , MonadIO m
-                   ) => HandlerT (MiddlewareT m) sec err aux m a
-                     -> MiddlewareT m
-extractNotFound = extractNearestVia (execHandlerT >=> \(_,t,_,_) -> return t)
-
-
 -- | Given a way to draw out a special-purpose trie from our route set, route
 -- to the responses based on a /furthest-reached/ method.
-extractNearestVia :: ( Functor m
-                     , Monad m
-                     , MonadIO m
+extractNearestVia :: ( MonadIO m
                      ) => (HandlerT (MiddlewareT m) sec err aux m a -> m (RootedPredTrie T.Text (MiddlewareT m)))
                        -> HandlerT (MiddlewareT m) sec err aux m a
                        -> MiddlewareT m

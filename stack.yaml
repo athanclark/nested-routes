@@ -5,12 +5,10 @@ packages:
     git: https://github.com/athanclark/wai-middleware-content-type
     commit: 8e22ca206e9fc8fd7b903afa8b073120f8897793
   extra-dep: true
-
 - location:
     git: https://github.com/athanclark/wai-middleware-verbs
     commit: d9d6b4d5426173b1bafe435e5d782315e27402d6
   extra-dep: true
-
 extra-deps:
   - composition-extra-2.0.0
   - tries-0.0.2
@@ -22,4 +20,4 @@ extra-deps:
   - wai-transformers-0.0.3
   - wai-middleware-content-type-0.0.5
   - wai-middleware-verbs-0.0.6
-resolver: nightly-2015-09-18
+resolver: nightly-2015-11-27
