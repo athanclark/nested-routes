@@ -64,22 +64,22 @@ f_ = file_
 file_ f = (:~) (f, \t -> t <$ guard (fst (T.breakOn "." t) == f))
 
 
-p_, parse_ :: (T.Text, Parser r) -> EitherUrlChunk ('Just r)
+p_, parse_ :: T.Text -> Parser r -> EitherUrlChunk ('Just r)
 p_ = parse_
 
 -- | Match against a /Parsed/ chunk, with <https://hackage.haskell.org/package/attoparsec attoparsec>.
-parse_ (i,q) = (:~) (i, eitherToMaybe . parseOnly q)
+parse_ i q = (:~) (i, eitherToMaybe . parseOnly q)
 
 
-r_, regex_ :: (T.Text, Regex) -> EitherUrlChunk ('Just [String])
+r_, regex_ :: T.Text -> Regex -> EitherUrlChunk ('Just [String])
 r_ = regex_
 
 -- | Match against a /Regular expression/ chunk, with <https://hackage.haskell.org/package/regex-compat regex-compat>.
-regex_ (i,q) = (:~) (i, matchRegex q . T.unpack)
+regex_ i q = (:~) (i, matchRegex q . T.unpack)
 
 -- | Match with a predicate against the url chunk directly.
-pred_ :: (T.Text, T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
-pred_ = (:~)
+pred_ :: T.Text -> (T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
+pred_ = curry (:~)
 
 
 -- | Constrained to AttoParsec, Regex-Compat and T.Text

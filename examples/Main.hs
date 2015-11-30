@@ -23,26 +23,6 @@ import Control.Monad.IO.Class
 import Control.Monad.Catch
 
 
-data AuthRole  = AuthRole deriving (Show, Eq)
-data AuthError = NeedsAuth deriving (Show, Eq, Typeable)
-
-instance Exception AuthError
-
--- | If you fail here and throw an AuthErr, then the user was not authorized to
--- under the conditions set by @ss :: [AuthRole]@, and based o_n the authentication
--- o_f that user's session from the @Request@ o_bject. Note that we could have a
--- shared cache o_f authenticated sessions, by adding more constraints o_n @m@ like
--- @MonadIO@.
--- For instance, even if there are [] auth roles, we could still include a header/timestamp
--- pair to uniquely identify the guest. o_r, we could equally change @Checksum ~ Maybe Token@,
--- so a guest just returns Nothing, and we could handle the case in @putAuth@ to
--- not do anything.
-authorize :: ( Monad m
-             , MonadThrow m
-             ) => Request -> [AuthRole] -> m (Response -> Response)
-authorize req ss | null ss   = return id
-                 | otherwise = throwM NeedsAuth
-
 defApp :: Application
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
@@ -52,22 +32,49 @@ main = run 3000 $
   `catchMiddlewareT` handleUploadError
   `catchMiddlewareT` handleAuthError
   ) defApp
+  where
+    handleUploadError u = fileExtsToMiddleware $
+      case u of
+        NoChunkedBody  -> text "No chunked body allowed!"
+        UploadTooLarge -> text "Upload too large"
 
+    handleAuthError e = fileExtsToMiddleware $
+      case e of
+        NeedsAuth -> text "Authentication needed"
 
-handleUploadError :: ( MonadIO m
-                     ) => UploadError -> MiddlewareT m
-handleUploadError u = fileExtsToMiddleware $
-  case u of
-    NoChunkedBody  -> text "No chunked body allowed!"
-    UploadTooLarge -> text "Upload too large"
+-- | A set of symbolic security roles
+data AuthRole = AuthRole
+  deriving (Show, Eq)
 
-handleAuthError :: ( MonadIO m
-                   ) => AuthError -> MiddlewareT m
-handleAuthError e = fileExtsToMiddleware $
-  case e of
-    NeedsAuth -> text "Authentication needed"
+-- | The error thrown during authentication or authorization.
+--
+--   I would encourage other security-related error schemes:
+--
+--   - one data type for user authority errors - like when a logged-in user tries to access
+--     the admin console
+--   - one for types of failed authentication, during login (user doesn't exist,
+--     incorrect password, etc.)
+--   - one for malicious attacks - for instance if someone has tried (and failed) to login
+--     5 times in the last minute, or multiple requests to the same resource
+data AuthError = NeedsAuth
+  deriving (Show, Eq, Typeable)
 
+instance Exception AuthError
 
+-- | Simple function that returns a response modification function - like
+--   something that adds to the response headers - to maintain a session cookie,
+--   for instance.
+--
+--   You can use 'Control.Monad.Catch.throwM' to throw arbitrary errors, but
+--   you should also catch them with 'Network.Wai.Trans.catchMiddlewareT' to
+--   avoid runtime exceptions.
+authorize :: ( Monad m
+             , MonadThrow m
+             ) => Request -> [AuthRole] -> m (Response -> Response)
+authorize req ss | null ss   = return id
+                 | otherwise = throwM NeedsAuth
+
+-- | The error thrown during the uploading function
 data UploadError = NoChunkedBody
                  | UploadTooLarge
   deriving (Show, Typeable)
@@ -84,7 +91,7 @@ routes = do
     matchHere (action fooHandle)
     auth AuthRole DontProtectHere
     match ("bar" </> o_) (action barHandle)
-    match (p_ ("double", double) </> o_) doubleHandle
+    match (p_ "double" double </> o_) doubleHandle
   match emailRoute emailHandle
   match ("baz" </> o_) (action bazHandle)
   matchAny (action notFoundHandle)
@@ -112,7 +119,7 @@ routes = do
 
     -- `/athan@foo.com`
     emailRoute :: UrlChunks '[ 'Just [String] ]
-    emailRoute = r_ ("email", mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
+    emailRoute = r_ "email" (mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
 
     emailHandle :: MonadIO m => [String] -> MiddlewareT m
     emailHandle e = action $ get $ text $ LT.pack (show e) <> " email"

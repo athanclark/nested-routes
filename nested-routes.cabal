@@ -57,7 +57,7 @@ Library
                       , text
                       , transformers
                       , tries
-                      , wai-transformers >= 0.0.3
+                      , wai-transformers >= 0.0.4
                       , wai-middleware-content-type >= 0.1.0
                       , wai-middleware-verbs >= 0.1.0
 
