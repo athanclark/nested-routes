@@ -1,4 +1,4 @@
-![Logo](https://raw.githubusercontent.com/athanclark/nested-routes/master/logo.png)
+![Logo](https://cdn.rawgit.com/athanclark/nested-routes-website/master/static/images/logo.svg)
 
 [![Stories in Ready](https://badge.waffle.io/athanclark/nested-routes.png?label=ready&title=Ready)](https://waffle.io/athanclark/nested-routes)
 nested-routes
