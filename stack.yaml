@@ -3,11 +3,11 @@ packages:
 - '.'
 - location:
     git: https://github.com/athanclark/wai-middleware-content-type
-    commit: e6a05c248332984191915384fb43ffd0f65098c0
+    commit: 20e49185abd2dbed6eaf2222e829b91a4de69ff4
   extra-dep: true
 - location:
     git: https://github.com/athanclark/wai-middleware-verbs
-    commit: 1c73dfd12bbebbbf43af02f7de1d6ac58550c914
+    commit: 2ee9985619084f02eb4423ca95874f331f6e014b
   extra-dep: true
 - location:
     git: https://github.com/athanclark/wai-transformers
@@ -26,5 +26,5 @@ extra-deps:
   - http-accept-0.2
   - poly-arity-0.0.7
   - wai-transformers-0.0.4
-  - wai-middleware-verbs-0.1.0
+  - wai-middleware-verbs-0.1.1
 resolver: nightly-2015-12-10

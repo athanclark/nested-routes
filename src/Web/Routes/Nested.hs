@@ -137,13 +137,16 @@ newtype HandlerT x sec m a = HandlerT
 execHandlerT :: Monad m => HandlerT x sec m a -> m (Tries x sec)
 execHandlerT hs = S.execStateT (runHandlerT hs) mempty
 
+{-# INLINEABLE execHandlerT #-}
+
 type ActionT m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
 
 -- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
 -- route sets cooperate with the content-type and verb combinators.
 action :: MonadIO m => ActionT m () -> MiddlewareT m
-action xs = verbsToMiddleware $! mapVerbs fileExtsToMiddleware xs
+action = verbsToMiddleware . mapVerbs fileExtsToMiddleware
 
+{-# INLINEABLE action #-}
 
 type RoutableT s m a = HandlerT (MiddlewareT m) (s, AuthScope) m a
 
@@ -185,6 +188,7 @@ match :: ( Monad m
            -> HandlerT resultContent sec m ()
 match ts vl = tell' (singleton ts vl, mempty, mempty)
 
+{-# INLINEABLE match #-}
 
 -- | Create a handle for the /current/ route - an alias for @\h -> match o_ handle@.
 matchHere :: ( Monad m
@@ -192,6 +196,8 @@ matchHere :: ( Monad m
              ) => content
                -> HandlerT content sec m ()
 matchHere = match origin_
+
+{-# INLINEABLE matchHere #-}
 
 
 -- | Match against any route, as a last resort against all failing matches -
@@ -202,6 +208,8 @@ matchAny :: ( Monad m
             ) => content
               -> HandlerT content sec m ()
 matchAny vl = tell' (mempty, singleton origin_ vl, mempty)
+
+{-# INLINEABLE matchAny #-}
 
 
 -- | Prepends a common route to an existing set of routes. You should note that
@@ -220,6 +228,8 @@ matchGroup ts cs = do
         , extrude ts trieNotFound
         , extrude ts trieSec
         )
+
+{-# INLINEABLE matchGroup #-}
 
 
 -- | Designate the scope of security to the set of routes - either only the adjacent
@@ -240,6 +250,8 @@ auth token scope =
         , singleton origin_ (token,scope)
         )
 
+{-# INLINEABLE auth #-}
+
 
 -- * Routing ---------------------------------------
 
@@ -248,6 +260,8 @@ route :: ( MonadIO m
          ) => HandlerT (MiddlewareT m) sec m () -- ^ Assembled @handle@ calls
            -> MiddlewareT m
 route hs = extractMatch hs . extractMatchAny hs
+
+{-# INLINEABLE route #-}
 
 
 -- | Given a security verification function that returns a method to updating the session,
@@ -259,6 +273,8 @@ routeAuth :: ( MonadIO m
                -> RoutableT sec m () -- ^ Assembled @handle@ calls
                -> MiddlewareT m
 routeAuth authorize hs = extractAuth authorize hs . route hs
+
+{-# INLINEABLE routeAuth #-}
 
 
 
@@ -279,12 +295,16 @@ extractMatch hs app req respond = do
       Just $    mid app req respond
     Just (_,mid) -> mid app req respond
 
+{-# INLINEABLE extractMatch #-}
+
 
 -- | Extracts only the @notFound@ responses into a @MiddlewareT@.
 extractMatchAny :: ( MonadIO m
                    ) => HandlerT (MiddlewareT m) sec m a
                      -> MiddlewareT m
 extractMatchAny = extractNearestVia (execHandlerT >=> \(_,t,_) -> return t)
+
+{-# INLINEABLE extractMatchAny #-}
 
 
 
@@ -301,6 +321,8 @@ extractAuthSym hs req = do
     go ys (_,(_,DontProtectHere),[]) = ys
     go ys (_,(x,_              ),_ ) = ys ++ [x]
 
+{-# INLINEABLE extractAuthSym #-}
+
 -- | Extracts only the security handling logic into a @MiddlewareT@.
 extractAuth :: ( MonadIO m
                , MonadThrow m
@@ -311,6 +333,8 @@ extractAuth authorize hs app req respond = do
   ss <- extractAuthSym hs req
   f <- authorize req ss
   app req (respond . f)
+
+{-# INLINEABLE extractAuth #-}
 
 
 -- | Given a way to draw out a special-purpose trie from our route set, route
@@ -325,6 +349,8 @@ extractNearestVia extr hs app req respond = do
         (\(_,mid,_) -> mid app req respond)
       $ PT.matchRPT (pathInfo req) trie
 
+{-# INLINEABLE extractNearestVia #-}
+
 
 
 -- * Pred-Trie related -----------------
@@ -332,6 +358,8 @@ extractNearestVia extr hs app req respond = do
 -- | Removes @.txt@ from @foo.txt@
 trimFileExt :: T.Text -> T.Text
 trimFileExt s = fst (T.breakOn "." s)
+
+{-# INLINEABLE trimFileExt #-}
 
 
 -- | A quirky function for processing the last element of a lookup path, only
@@ -355,15 +383,20 @@ matchWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
       then ([t],) <$> (mx <$~> d)
       else (\(ts',x) -> (t:ts',x d)) <$> (matchWithLPT f (NE.fromList ts) xs)
 
+{-# INLINEABLE matchWithLPT #-}
+
+
 matchWithLRPT :: ( Hashable s
                  , Eq s
                  ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
 matchWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
 matchWithLRPT f ts (RootedPredTrie _ xs) = matchWithLPT f (NE.fromList ts) xs
 
+{-# INLINEABLE matchWithLRPT #-}
+
 
 tell' :: (Monoid w, S.MonadState w m) => w -> m ()
-tell' x = do
-  xs <- S.get
-  S.put $ xs <> x
+tell' x = S.modify' (<> x)
+
+{-# INLINEABLE tell' #-}
 
