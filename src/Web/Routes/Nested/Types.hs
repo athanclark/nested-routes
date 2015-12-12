@@ -24,8 +24,8 @@ import           Web.Routes.Nested.Types.UrlChunks
 import qualified Data.Text as T
 import           Data.Trie.Pred
 import           Data.Trie.Pred.Step
-import qualified Data.Trie.Map as MT
-import qualified Data.Map as Map
+import qualified Data.Trie.HashMap as HT
+import qualified Data.HashMap.Lazy as HM
 
 
 type family CatMaybes (xs :: [Maybe *]) :: [*] where
@@ -55,7 +55,7 @@ class Extend eitherUrlChunk child result | eitherUrlChunk child -> result where
 -- | Literal case
 instance Extend (EitherUrlChunk  'Nothing) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
   extend ((:=) t) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
-    PredTrie (MT.MapStep $ Map.singleton t (mx, Just xs)) mempty
+    PredTrie (HT.HashMapStep $ HM.singleton t (mx, Just xs)) mempty
 
 -- | Existentially quantified case
 instance Extend (EitherUrlChunk ('Just r)) (RootedPredTrie T.Text (r -> a)) (RootedPredTrie T.Text a) where

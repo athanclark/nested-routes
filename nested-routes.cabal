@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                7.0.0
+Version:                7.1.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -47,16 +47,17 @@ Library
                       , attoparsec
                       , bytestring
                       , composition-extra >= 2.0.0
-                      , containers
                       , exceptions
+                      , hashable
                       , mtl
                       , poly-arity >= 0.0.7
-                      , pred-trie >= 0.3
+                      , pred-trie >= 0.4
                       , regex-compat
                       , semigroups
                       , text
                       , transformers
                       , tries
+                      , unordered-containers
                       , wai-transformers >= 0.0.4
                       , wai-middleware-content-type >= 0.1.0
                       , wai-middleware-verbs >= 0.1.0
@@ -80,7 +81,8 @@ Test-Suite test
                       , attoparsec
                       , bytestring
                       , composition-extra
-                      , containers
+                      , exceptions
+                      , hashable
                       , http-types
                       , mtl
                       , poly-arity
@@ -90,6 +92,7 @@ Test-Suite test
                       , text
                       , transformers
                       , tries
+                      , unordered-containers
                       , wai-transformers
                       , wai-middleware-content-type
                       , wai-middleware-verbs
@@ -115,8 +118,8 @@ Executable example
                       , attoparsec
                       , bytestring
                       , composition-extra
-                      , containers
                       , exceptions
+                      , hashable
                       , http-types
                       , mtl
                       , poly-arity
@@ -126,6 +129,7 @@ Executable example
                       , text
                       , transformers
                       , tries
+                      , unordered-containers
                       , wai-transformers
                       , wai-middleware-content-type
                       , wai-middleware-verbs
@@ -153,11 +157,12 @@ Executable example-stm
                       , attoparsec
                       , bytestring
                       , composition-extra
-                      , containers
                       , cookie
                       , cryptonite
                       , data-default
                       , errors
+                      , exceptions
+                      , hashable
                       , http-types
                       , iso8601-time
                       , lucid
@@ -172,6 +177,7 @@ Executable example-stm
                       , time
                       , transformers
                       , tries
+                      , unordered-containers
                       , wai-extra
                       , wai-middleware-content-type
                       , wai-middleware-verbs

@@ -101,11 +101,12 @@ import           Data.Trie.Pred                     (RootedPredTrie (..), PredTr
 import qualified Data.Trie.Pred                     as PT -- only using lookups
 import           Data.Trie.Pred.Step                (PredStep (..), PredSteps (..))
 import qualified Data.Trie.Class                    as TC
-import           Data.Trie.Map                      (MapStep (..))
-import qualified Data.Map                           as Map
+import           Data.Trie.HashMap                  (HashMapStep (..))
+import qualified Data.HashMap.Lazy                  as HM
 import           Data.List.NonEmpty                 (NonEmpty (..))
 import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
+import           Data.Hashable
 import           Data.Maybe                         (fromMaybe)
 import           Data.Monoid
 import           Data.Functor.Syntax
@@ -335,13 +336,15 @@ trimFileExt s = fst (T.breakOn "." s)
 
 -- | A quirky function for processing the last element of a lookup path, only
 -- on /literal/ matches.
-matchWithLPT :: Ord s => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
-matchWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
+matchWithLPT :: ( Hashable s
+                , Eq s
+                ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
+matchWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
   | null ts   = getFirst $ First (goLit (f t) ls) <> foldMap (First . goPred) ps
   | otherwise = getFirst $ First (goLit    t  ls) <> foldMap (First . goPred) ps
   where
     goLit t' xs = do
-      (mx,mxs) <- Map.lookup t' xs
+      (mx,mxs) <- HM.lookup t' xs
       if null ts
       then ([t],) <$> mx
       else (\(ts',x) -> (t:ts',x)) <$> (matchWithLPT f (NE.fromList ts) =<< mxs)
@@ -354,7 +357,9 @@ matchWithLPT f (t:|ts) (PredTrie (MapStep ls) (PredSteps ps))
       then ([t],) <$> (mx <$~> d)
       else (\(ts',x) -> (t:ts',x d)) <$> (matchWithLPT f (NE.fromList ts) xs)
 
-matchWithLRPT :: Ord s => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
+matchWithLRPT :: ( Hashable s
+                 , Eq s
+                 ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
 matchWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
 matchWithLRPT f ts (RootedPredTrie _ xs) = matchWithLPT f (NE.fromList ts) xs
 
