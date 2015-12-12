@@ -7,7 +7,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/athanclark/wai-middleware-verbs
-    commit: 7dc4cc25b03158ed15825544ca215eafec7deb14
+    commit: 1c73dfd12bbebbbf43af02f7de1d6ac58550c914
   extra-dep: true
 - location:
     git: https://github.com/athanclark/wai-transformers
