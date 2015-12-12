@@ -142,7 +142,7 @@ type ActionT m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
 -- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
 -- route sets cooperate with the content-type and verb combinators.
 action :: MonadIO m => ActionT m () -> MiddlewareT m
-action xs = verbsToMiddleware $ mapVerbs fileExtsToMiddleware xs
+action xs = verbsToMiddleware $! mapVerbs fileExtsToMiddleware xs
 
 
 type RoutableT s m a = HandlerT (MiddlewareT m) (s, AuthScope) m a
@@ -348,8 +348,6 @@ matchWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
       if null ts
       then ([t],) <$> mx
       else (\(ts',x) -> (t:ts',x)) <$> (matchWithLPT f (NE.fromList ts) =<< mxs)
-
--- TODO: Need `match` for Map? idk actually, `t` should be enough for this step.
 
     goPred (PredStep _ predicate mx xs) = do
       d <- predicate t

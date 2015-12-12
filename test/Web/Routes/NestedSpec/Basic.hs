@@ -43,52 +43,38 @@ authorize req ss | null ss   = return id
 defApp :: Application
 defApp _ respond = respond $ textOnlyStatus status404 "404 :("
 
+successMiddleware :: Middleware
+successMiddleware _ _ respond = respond $ textOnly "200!"
+
 app :: Application
 app =
-  let yoDawgIHeardYouLikeYoDawgsYo = (routeAuth authorize routes)
-                                   `catchMiddlewareT` unauthHandle
+  let yoDawgIHeardYouLikeYoDawgsYo =
+        (routeAuth authorize routes) `catchMiddlewareT` unauthHandle
       routes = do
-        matchHere (action rootHandle)
+        matchHere successMiddleware
         matchGroup fooRoute $ do
-          matchHere (action fooHandle)
+          matchHere successMiddleware
           auth AuthRole DontProtectHere
-          match barRoute    (action barHandle)
-          match doubleRoute (action . doubleHandle)
-        match emailRoute (action . emailHandle)
-        match bazRoute (action bazHandle)
-        matchAny (action notFoundHandle)
+          match barRoute    successMiddleware
+        match doubleRoute (\_ -> successMiddleware)
+        match emailRoute (\_ -> successMiddleware)
+        match bazRoute successMiddleware
   in yoDawgIHeardYouLikeYoDawgsYo defApp
   where
-    rootHandle = get $ text "Home"
-
     -- `/foo`
     fooRoute = l_ "foo" </> o_
-    fooHandle = get $ text "foo!"
 
     -- `/foo/bar`
     barRoute = l_ "bar" </> o_
-    barHandle = get $ do
-      text "bar!"
-      json ("json bar!" :: LT.Text)
 
     -- `/foo/1234e12`, uses attoparsec
     doubleRoute = p_ "double" double </> o_
-    doubleHandle d = get $ text $ LT.pack (show d) <> " foos"
 
     -- `/athan@foo.com`
     emailRoute = r_ "email" (mkRegex "(^[-a-zA-Z0-9_.]+@[-a-zA-Z0-9]+\\.[-a-zA-Z0-9.]+$)") </> o_
-    emailHandle e = get $ text $ LT.pack (show e) <> " email"
 
     -- `/baz`, uses regex-compat
     bazRoute = l_ "baz" </> o_
-    bazHandle = do
-      get $ text "baz!"
-      let uploader req = do liftIO $ print =<< strictRequestBody req
-                            return ()
-          uploadHandle = text "Woah! Upload content!"
-      post uploader uploadHandle
 
-    notFoundHandle = get $ textStatus status404 "Not Found :("
-
-unauthHandle :: (MonadCatch m, MonadIO m) => AuthErr -> MiddlewareT m
-unauthHandle NeedsAuth = action $ get $ textStatus status401 "Unauthorized!"
+unauthHandle :: AuthErr -> Middleware
+unauthHandle NeedsAuth _ _ respond = respond $ textOnlyStatus status401 "Unauthorized!"

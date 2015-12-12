@@ -21,44 +21,34 @@ spec = do
         get "/" `shouldRespondWith`
         200
       describe "GET /foo" $
-        it "should respond with 200 and 'foo!'" $
+        it "should respond with 200" $
         get "/foo" `shouldRespondWith`
-        "" { matchStatus = 200
-           , matchBody = Just "foo!"
-           }
+        200
       describe "GET /baz" $
-        it "should respond with 200 and 'baz!'" $
+        it "should respond with 200" $
         get "/baz" `shouldRespondWith`
-        "" { matchStatus = 200
-           , matchBody = Just "baz!"
-           }
+        200
       describe "GET /borked" $
         it "should respond with 404" $
         get "/borked" `shouldRespondWith`
         404
+  describe "Attoparsec Routes" $
+    with (return app) $ do
+      describe "GET /12.34" $
+        it "should respond with 200" $
+        get "/12.34" `shouldRespondWith`
+        200
   describe "Regex Routes" $
     with (return app) $ do
       describe "GET /athan@emails.com" $
-        it "should respond with 200 and '[\"athan@emails.com\"] email'" $
+        it "should respond with 200" $
         get "/athan@emails.com" `shouldRespondWith`
-        "" { matchStatus = 200
-           , matchBody = Just "[\"athan@emails.com\"] email"
-           }
-  describe "Upload Routes" $
-    with (return app) $ do
-      describe "POST /baz" $
-        it "should respond with 200 and 'Woah! Upload content!'" $
-        post "/baz" "anything" `shouldRespondWith`
-        "" { matchStatus = 200
-           , matchBody = Just "Woah! Upload content!"
-           }
+        200
   describe "Secure Routes" $
     with (return app) $ do
       describe "GET /foo/bar" $
-        it "should respond with 401 and 'Unauthorized!'" $
+        it "should respond with 401" $
         get "/foo/bar" `shouldRespondWith`
-        "" { matchStatus = 401
-           , matchBody = Just "Unauthorized!"
-           }
+        401
 
 

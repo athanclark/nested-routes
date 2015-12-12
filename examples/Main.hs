@@ -91,7 +91,7 @@ routes = do
     matchHere (action fooHandle)
     auth AuthRole DontProtectHere
     match ("bar" </> o_) (action barHandle)
-    match (p_ "double" double </> o_) doubleHandle
+  match (p_ "double" double </> o_) doubleHandle
   match emailRoute emailHandle
   match ("baz" </> o_) (action bazHandle)
   matchAny (action notFoundHandle)
