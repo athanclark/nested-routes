@@ -89,7 +89,7 @@ data EitherUrlChunk (x :: Maybe *) where
   Lit  { litChunk :: {-# UNPACK #-} !T.Text
        } :: EitherUrlChunk 'Nothing
   Pred { predTag  :: {-# UNPACK #-} !T.Text
-       , predPred :: (T.Text -> Maybe r)
+       , predPred :: !(T.Text -> Maybe r)
        } :: EitherUrlChunk ('Just r)
 
 -- | Use raw strings instead of prepending @l@
