@@ -2,6 +2,7 @@
     GADTs
   , PolyKinds
   , TypeFamilies
+  , BangPatterns
   , DeriveFunctor
   , TypeOperators
   , TupleSections
@@ -67,11 +68,12 @@ order you like for your application.
 module Web.Routes.Nested
   ( module X
   -- * Types
-  , Tries
+  , Tries (..)
   , HandlerT (..)
   , execHandlerT
   , ActionT
   , RoutableT
+  , SecurityToken (..)
   , AuthScope (..)
   , ExtrudeSoundly
   -- * Combinators
@@ -101,7 +103,7 @@ import           Data.Trie.Pred                     (RootedPredTrie (..), PredTr
 import qualified Data.Trie.Pred                     as PT -- only using lookups
 import           Data.Trie.Pred.Step                (PredStep (..), PredSteps (..))
 import qualified Data.Trie.Class                    as TC
-import           Data.Trie.HashMap                  (HashMapStep (..))
+import           Data.Trie.HashMap                  (HashMapStep (..), HashMapChildren (..))
 import qualified Data.HashMap.Lazy                  as HM
 import           Data.List.NonEmpty                 (NonEmpty (..))
 import qualified Data.List.NonEmpty                 as NE
@@ -119,20 +121,24 @@ import qualified Control.Monad.State                as S
 import           Control.Monad.Catch
 
 
-type Tries x s = ( RootedPredTrie T.Text x
-                 , RootedPredTrie T.Text x
-                 , RootedPredTrie T.Text s
-                 )
+
+data Tries x s = Tries
+  { trieContent  :: !(RootedPredTrie T.Text x)
+  , trieCatchAll :: !(RootedPredTrie T.Text x)
+  , trieSecurity :: !(RootedPredTrie T.Text s)
+  }
+
+instance Monoid (Tries x s) where
+  mempty = Tries mempty mempty mempty
+  mappend (Tries x1 x2 x3) (Tries y1 y2 y3) =
+    ((Tries $! x1 <> y1)
+            $! x2 <> y2)
+            $! x3 <> y3
 
 newtype HandlerT x sec m a = HandlerT
-  { runHandlerT :: S.StateT (Tries x sec) m a }
-  deriving ( Functor
-           , Applicative
-           , Monad
-           , MonadIO
-           , MonadTrans
-           , S.MonadState (Tries x sec)
-           )
+  { runHandlerT :: S.StateT (Tries x sec) m a
+  } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
+             , S.MonadState (Tries x sec))
 
 execHandlerT :: Monad m => HandlerT x sec m a -> m (Tries x sec)
 execHandlerT hs = S.execStateT (runHandlerT hs) mempty
@@ -144,11 +150,11 @@ type ActionT m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
 -- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
 -- route sets cooperate with the content-type and verb combinators.
 action :: MonadIO m => ActionT m () -> MiddlewareT m
-action = verbsToMiddleware . mapVerbs fileExtsToMiddleware
+action a = verbsToMiddleware $! mapVerbs fileExtsToMiddleware a
 
 {-# INLINEABLE action #-}
 
-type RoutableT s m a = HandlerT (MiddlewareT m) (s, AuthScope) m a
+type RoutableT s m a = HandlerT (MiddlewareT m) (SecurityToken s) m a
 
 type ExtrudeSoundly cleanxs xs c r =
   ( cleanxs ~ CatMaybes xs
@@ -186,7 +192,11 @@ match :: ( Monad m
          ) => UrlChunks xs
            -> childContent
            -> HandlerT resultContent sec m ()
-match ts vl = tell' (singleton ts vl, mempty, mempty)
+match !ts !vl =
+  tell' $ Tries (singleton ts vl)
+                mempty
+                mempty
+
 
 {-# INLINEABLE match #-}
 
@@ -207,7 +217,11 @@ matchAny :: ( Monad m
             , HasResult content (MiddlewareT m)
             ) => content
               -> HandlerT content sec m ()
-matchAny vl = tell' (mempty, singleton origin_ vl, mempty)
+matchAny !vl =
+  tell' $ Tries mempty
+                (singleton origin_ vl)
+                mempty
+
 
 {-# INLINEABLE matchAny #-}
 
@@ -222,20 +236,28 @@ matchGroup :: ( Monad m
               ) => UrlChunks xs
                 -> HandlerT childContent  childSec  m ()
                 -> HandlerT resultContent resultSec m ()
-matchGroup ts cs = do
-  (trieContent,trieNotFound,trieSec) <- lift $ execHandlerT cs
-  tell' ( extrude ts trieContent
-        , extrude ts trieNotFound
-        , extrude ts trieSec
-        )
+matchGroup !ts cs = do
+  (Tries trieContent trieNotFound trieSec) <- lift $ execHandlerT cs
+  tell' $ Tries (extrude ts trieContent)
+                (extrude ts trieNotFound)
+                (extrude ts trieSec)
+
 
 {-# INLINEABLE matchGroup #-}
 
+-- | Use a custom security token type and an 'AuthScope' to define
+--   /where/ and /what kind/ of security should take place.
+data SecurityToken s = SecurityToken
+  { securityToken :: !s
+  , securityScope :: {-# UNPACK #-} !AuthScope
+  }
 
 -- | Designate the scope of security to the set of routes - either only the adjacent
 -- routes, or the adjacent /and/ the parent container node (root node if not
 -- declared).
-data AuthScope = ProtectHere | DontProtectHere
+data AuthScope
+  = ProtectHere
+  | DontProtectHere
   deriving (Show, Eq)
 
 -- | Sets the security role and error handler for a set of routes, optionally
@@ -243,12 +265,12 @@ data AuthScope = ProtectHere | DontProtectHere
 auth :: ( Monad m
         ) => sec
           -> AuthScope
-          -> HandlerT content (sec, AuthScope) m ()
-auth token scope =
-  tell' ( mempty
-        , mempty
-        , singleton origin_ (token,scope)
-        )
+          -> HandlerT content (SecurityToken sec) m ()
+auth !token !scope =
+  tell' $ Tries mempty
+                mempty
+                (singleton origin_ $ SecurityToken token scope)
+
 
 {-# INLINEABLE auth #-}
 
@@ -285,14 +307,15 @@ routeAuth authorize hs = extractAuth authorize hs . route hs
 extractMatch :: ( MonadIO m
                 ) => HandlerT (MiddlewareT m) sec m a
                   -> MiddlewareT m
-extractMatch hs app req respond = do
-  (trie,_,_) <- execHandlerT hs
-  case matchWithLRPT trimFileExt (pathInfo req) trie of
+extractMatch !hs app req respond = do
+  let path = pathInfo req
+  trie <- trieContent <$> execHandlerT hs
+  case matchWithLRPT trimFileExt path trie of
     Nothing -> fromMaybe (app req respond) $ do
-      guard $ not . null $ pathInfo req
-      guard $ trimFileExt (last $ pathInfo req) == "index"
-      mid <- TC.lookup (init $ pathInfo req) trie
-      Just $    mid app req respond
+      guard $ not (null path)
+      guard $ trimFileExt (last path) == "index"
+      mid <- TC.lookup (init path) trie
+      Just $! mid app req respond
     Just (_,mid) -> mid app req respond
 
 {-# INLINEABLE extractMatch #-}
@@ -302,7 +325,7 @@ extractMatch hs app req respond = do
 extractMatchAny :: ( MonadIO m
                    ) => HandlerT (MiddlewareT m) sec m a
                      -> MiddlewareT m
-extractMatchAny = extractNearestVia (execHandlerT >=> \(_,t,_) -> return t)
+extractMatchAny = extractNearestVia (\x -> trieCatchAll <$> execHandlerT x)
 
 {-# INLINEABLE extractMatchAny #-}
 
@@ -311,15 +334,15 @@ extractMatchAny = extractNearestVia (execHandlerT >=> \(_,t,_) -> return t)
 -- | Find the security tokens / authorization roles affiliated with
 -- a request for a set of routes.
 extractAuthSym :: ( Monad m
-                  ) => HandlerT x (sec, AuthScope) m a
+                  ) => HandlerT x (SecurityToken sec) m a
                     -> Request
                     -> m [sec]
 extractAuthSym hs req = do
-  (_,_,trie) <- execHandlerT hs
-  return $ foldl go [] (PT.matchesRPT (pathInfo req) trie)
+  trie <- trieSecurity <$> execHandlerT hs
+  return $! foldr go [] $ PT.matchesRPT (pathInfo req) trie
   where
-    go ys (_,(_,DontProtectHere),[]) = ys
-    go ys (_,(x,_              ),_ ) = ys ++ [x]
+    go (_,(SecurityToken _ DontProtectHere),[]) ys = ys
+    go (_,(SecurityToken x _              ),_ ) ys = x:ys
 
 {-# INLINEABLE extractAuthSym #-}
 
@@ -327,7 +350,7 @@ extractAuthSym hs req = do
 extractAuth :: ( MonadIO m
                , MonadThrow m
                ) => (Request -> [sec] -> m (Response -> Response)) -- authorization method
-                 -> HandlerT x (sec, AuthScope) m a
+                 -> HandlerT x (SecurityToken sec) m a
                  -> MiddlewareT m
 extractAuth authorize hs app req respond = do
   ss <- extractAuthSym hs req
@@ -347,7 +370,7 @@ extractNearestVia extr hs app req respond = do
   trie <- extr hs
   maybe (app req respond)
         (\(_,mid,_) -> mid app req respond)
-      $ PT.matchRPT (pathInfo req) trie
+      $! PT.matchRPT (pathInfo req) trie
 
 {-# INLINEABLE extractNearestVia #-}
 
@@ -357,7 +380,7 @@ extractNearestVia extr hs app req respond = do
 
 -- | Removes @.txt@ from @foo.txt@
 trimFileExt :: T.Text -> T.Text
-trimFileExt s = fst (T.breakOn "." s)
+trimFileExt !s = fst $! T.breakOn "." s
 
 {-# INLINEABLE trimFileExt #-}
 
@@ -368,20 +391,20 @@ matchWithLPT :: ( Hashable s
                 , Eq s
                 ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
 matchWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
-  | null ts   = getFirst $ First (goLit (f t) ls) <> foldMap (First . goPred) ps
-  | otherwise = getFirst $ First (goLit    t  ls) <> foldMap (First . goPred) ps
+  | null ts   = getFirst $ First ((goLit $! f t) ls) <> foldMap (First . goPred) ps
+  | otherwise = getFirst $ First (goLit       t  ls) <> foldMap (First . goPred) ps
   where
     goLit t' xs = do
-      (mx,mxs) <- HM.lookup t' xs
+      (HashMapChildren mx mxs) <- HM.lookup t' xs
       if null ts
       then ([t],) <$> mx
-      else (\(ts',x) -> (t:ts',x)) <$> (matchWithLPT f (NE.fromList ts) =<< mxs)
+      else fmap (\(ts',x) -> (t:ts',x)) $! matchWithLPT f (NE.fromList ts) =<< mxs
 
     goPred (PredStep _ predicate mx xs) = do
       d <- predicate t
       if null ts
       then ([t],) <$> (mx <$~> d)
-      else (\(ts',x) -> (t:ts',x d)) <$> (matchWithLPT f (NE.fromList ts) xs)
+      else fmap (\(ts',x) -> (t:ts',x d)) $! matchWithLPT f (NE.fromList ts) xs
 
 {-# INLINEABLE matchWithLPT #-}
 

@@ -47,6 +47,7 @@ Library
                       , attoparsec
                       , bytestring
                       , composition-extra >= 2.0.0
+                      , errors
                       , exceptions
                       , hashable
                       , mtl
@@ -81,6 +82,7 @@ Test-Suite test
                       , attoparsec
                       , bytestring
                       , composition-extra
+                      , errors
                       , exceptions
                       , hashable
                       , http-types
@@ -118,6 +120,7 @@ Executable example
                       , attoparsec
                       , bytestring
                       , composition-extra
+                      , errors
                       , exceptions
                       , hashable
                       , http-types

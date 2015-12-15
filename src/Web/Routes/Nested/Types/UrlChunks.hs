@@ -2,6 +2,7 @@
     GADTs
   , DataKinds
   , RankNTypes
+  , BangPatterns
   , TypeOperators
   , KindSignatures
   , OverloadedStrings
@@ -41,6 +42,7 @@ import Text.Regex
 import Data.String (IsString (..))
 import qualified Data.Text as T
 import Control.Monad
+import Control.Error (hush)
 
 
 
@@ -55,37 +57,40 @@ l_, literal_ :: T.Text -> EitherUrlChunk 'Nothing
 l_ = literal_
 
 -- | Match against a /Literal/ chunk
-literal_ = (:=)
+literal_ = Lit
 
 f_, file_ :: T.Text -> EitherUrlChunk ('Just T.Text)
 f_ = file_
 
 -- | Removes file extension from the matched route
-file_ f = (:~) (f, \t -> t <$ guard (fst (T.breakOn "." t) == f))
+file_ f = pred_ f (\t -> t <$ guard (fst (T.breakOn "." t) == f))
 
 
 p_, parse_ :: T.Text -> Parser r -> EitherUrlChunk ('Just r)
 p_ = parse_
 
 -- | Match against a /Parsed/ chunk, with <https://hackage.haskell.org/package/attoparsec attoparsec>.
-parse_ i q = (:~) (i, eitherToMaybe . parseOnly q)
+parse_ i q = pred_ i (hush . parseOnly q)
 
 
 r_, regex_ :: T.Text -> Regex -> EitherUrlChunk ('Just [String])
 r_ = regex_
 
 -- | Match against a /Regular expression/ chunk, with <https://hackage.haskell.org/package/regex-compat regex-compat>.
-regex_ i q = (:~) (i, matchRegex q . T.unpack)
+regex_ i q = pred_ i (matchRegex q . T.unpack)
 
 -- | Match with a predicate against the url chunk directly.
 pred_ :: T.Text -> (T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
-pred_ = curry (:~)
+pred_ = Pred
 
 
 -- | Constrained to AttoParsec, Regex-Compat and T.Text
 data EitherUrlChunk (x :: Maybe *) where
-  (:=) :: T.Text                      -> EitherUrlChunk 'Nothing
-  (:~) :: (T.Text, T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
+  Lit  { litChunk :: {-# UNPACK #-} !T.Text
+       } :: EitherUrlChunk 'Nothing
+  Pred { predTag  :: {-# UNPACK #-} !T.Text
+       , predPred :: (T.Text -> Maybe r)
+       } :: EitherUrlChunk ('Just r)
 
 -- | Use raw strings instead of prepending @l@
 instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
@@ -104,10 +109,3 @@ data UrlChunks (xs :: [Maybe *]) where
 (</>) = Cons
 
 infixr 9 </>
-
-
--- Utils
-
-eitherToMaybe :: Either String r -> Maybe r
-eitherToMaybe (Right r') = Just r'
-eitherToMaybe _         = Nothing

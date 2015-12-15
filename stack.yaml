@@ -15,13 +15,17 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/athanclark/pred-trie
-    commit: f9e0b1b3762bf200d6d3f7b4fd3480b1a62aad83
+    commit: a209cf69e40f5182d11c0fa4e59ada1b0b6e42ba
+  extra-dep: true
+- location:
+    git: https://github.com/athanclark/tries
+    commit: eb740126072a1c8da175cd28caadbff7bef3e7f5
   extra-dep: true
 extra-deps:
   - composition-extra-2.0.0
-  - tries-0.0.3
+  - tries-0.0.4
   - rose-trees-0.0.3
-  - pred-trie-0.4.0
+  - pred-trie-0.4.1
   - wai-util-0.8
   - http-accept-0.2
   - poly-arity-0.0.7
