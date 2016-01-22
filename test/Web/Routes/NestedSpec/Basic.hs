@@ -35,17 +35,17 @@ instance Exception AuthErr
 --   so a guest just returns Nothing, and we could handle the case in @putAuth@ to
 --   not do anything.
 authorize :: ( MonadThrow m
-             ) => Request -> [AuthRole] -> m (Response -> Response)
+             ) => Request -> [AuthRole] -> m ()
 -- authorize _ _ = return id -- uncomment to force constant authorization
-authorize req ss | null ss   = return id
+authorize req ss | null ss   = return ()
                  | otherwise = throwM NeedsAuth
 
 defApp :: Application
 defApp _ respond = respond $
-  (textOnly "404 :(") { responseStatus = status400 }
+  textOnly "404 :(" status404 []
 
 successMiddleware :: Middleware
-successMiddleware _ _ respond = respond $ textOnly "200!"
+successMiddleware _ _ respond = respond $ textOnly "200!" status200 []
 
 app :: Application
 app =
@@ -79,4 +79,4 @@ app =
 
 unauthHandle :: AuthErr -> Middleware
 unauthHandle NeedsAuth _ _ respond = respond $
-  (textOnly "Unauthorized!") { responseStatus = status401 }
+  textOnly "Unauthorized!" status401 []
