@@ -3,7 +3,6 @@
   , PolyKinds
   , TypeFamilies
   , BangPatterns
-  , DeriveFunctor
   , TypeOperators
   , TupleSections
   , DoAndIfThenElse
@@ -11,7 +10,6 @@
   , FlexibleContexts
   , OverloadedStrings
   , ScopedTypeVariables
-  , GeneralizedNewtypeDeriving
   #-}
 
 {- |
@@ -71,8 +69,6 @@ module Web.Routes.Nested
   , Tries (..)
   , HandlerT (..)
   , execHandlerT
-  , ActionT
-  , RoutableT
   , SecurityToken (..)
   , AuthScope (..)
   , ExtrudeSoundly
@@ -82,11 +78,9 @@ module Web.Routes.Nested
   , matchAny
   , matchGroup
   , auth
-  , action
   -- * Routing
   , route
   , routeAuth
-  -- * Extraction
   , extractMatch
   , extractMatchAny
   , extractAuthSym
@@ -94,14 +88,16 @@ module Web.Routes.Nested
   , extractNearestVia
   ) where
 
+import           Web.Routes.Nested.Match            as X
 import           Web.Routes.Nested.Types            as X
 import           Network.Wai.Trans                  as X
 import           Network.Wai.Middleware.Verbs       as X
 import           Network.Wai.Middleware.ContentType as X
 
-import           Data.Trie.Pred                     (RootedPredTrie (..), PredTrie (..))
-import qualified Data.Trie.Pred                     as PT -- only using lookups
-import           Data.Trie.Pred.Step                (PredStep (..), PredSteps (..))
+import qualified Data.Trie.Pred.Base                as PT -- only using lookups
+import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
+import           Data.Trie.Pred.Base.Step           (PredStep (..), PredSteps (..))
+import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..), CatMaybes)
 import qualified Data.Trie.Class                    as TC
 import           Data.Trie.HashMap                  (HashMapStep (..), HashMapChildren (..))
 import qualified Data.HashMap.Lazy                  as HM
@@ -109,60 +105,15 @@ import           Data.List.NonEmpty                 (NonEmpty (..))
 import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
 import           Data.Hashable
-import           Data.Maybe                         (fromMaybe)
 import           Data.Monoid
 import           Data.Functor.Syntax
 import           Data.Function.Poly
 
 import           Control.Monad
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans
 import qualified Control.Monad.State                as S
 import           Control.Monad.Catch
+import           Control.Monad.Trans
 
-
-
-data Tries x s = Tries
-  { trieContent  :: !(RootedPredTrie T.Text x)
-  , trieCatchAll :: !(RootedPredTrie T.Text x)
-  , trieSecurity :: !(RootedPredTrie T.Text s)
-  }
-
-instance Monoid (Tries x s) where
-  mempty = Tries mempty mempty mempty
-  mappend (Tries x1 x2 x3) (Tries y1 y2 y3) =
-    ((Tries $! x1 <> y1)
-            $! x2 <> y2)
-            $! x3 <> y3
-
-newtype HandlerT x sec m a = HandlerT
-  { runHandlerT :: S.StateT (Tries x sec) m a
-  } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
-             , S.MonadState (Tries x sec))
-
-execHandlerT :: Monad m => HandlerT x sec m a -> m (Tries x sec)
-execHandlerT hs = S.execStateT (runHandlerT hs) mempty
-
-{-# INLINEABLE execHandlerT #-}
-
-type ActionT m a = VerbListenerT (FileExtListenerT (MiddlewareT m) m a) m a
-
--- | Turn an @ActionT@ into a @MiddlewareT@ - could be used to make middleware-based
--- route sets cooperate with the content-type and verb combinators.
-action :: MonadIO m => ActionT m () -> MiddlewareT m
-action a = verbsToMiddleware $! mapVerbs fileExtsToMiddleware a
-
-{-# INLINEABLE action #-}
-
-type RoutableT s m a = HandlerT (MiddlewareT m) (SecurityToken s) m a
-
-type ExtrudeSoundly cleanxs xs c r =
-  ( cleanxs ~ CatMaybes xs
-  , ArityTypeListIso c cleanxs r
-  , Extrude (UrlChunks xs)
-      (RootedPredTrie T.Text c)
-      (RootedPredTrie T.Text r)
-  )
 
 -- | Embed a 'Network.Wai.Trans.MiddlewareT' into a set of routes via a matching string. You should
 --   expect the match to create /arity/ in your handler - the @childContent@ variable.
@@ -183,7 +134,6 @@ type ExtrudeSoundly cleanxs xs c r =
 --   by a predicate (which creates another data type to handle) with 'group',
 --   then we would need another variable of arity /before/ the @Double@.
 match :: ( Monad m
-         , HasResult childContent (MiddlewareT m)
          , Singleton (UrlChunks xs)
              childContent
              (RootedPredTrie T.Text resultContent)
@@ -202,7 +152,6 @@ match !ts !vl =
 
 -- | Create a handle for the /current/ route - an alias for @\h -> match o_ handle@.
 matchHere :: ( Monad m
-             , HasResult content (MiddlewareT m)
              ) => content
                -> HandlerT content sec m ()
 matchHere = match origin_
@@ -214,7 +163,6 @@ matchHere = match origin_
 --   most people use this for a catch-all at some level in their routes, something
 --   like a @not-found 404@ page is useful.
 matchAny :: ( Monad m
-            , HasResult content (MiddlewareT m)
             ) => content
               -> HandlerT content sec m ()
 matchAny !vl =
@@ -249,8 +197,8 @@ matchGroup !ts cs = do
 --   /where/ and /what kind/ of security should take place.
 data SecurityToken s = SecurityToken
   { securityToken :: !s
-  , securityScope :: {-# UNPACK #-} !AuthScope
-  }
+  , securityScope :: !AuthScope
+  } deriving (Show)
 
 -- | Designate the scope of security to the set of routes - either only the adjacent
 -- routes, or the adjacent /and/ the parent container node (root node if not
@@ -277,100 +225,102 @@ auth !token !scope =
 
 -- * Routing ---------------------------------------
 
--- | Turns a @HandlerT@ containing @MiddlewareT@s into a @MiddlewareT@.
-route :: ( MonadIO m
-         ) => HandlerT (MiddlewareT m) sec m () -- ^ Assembled @handle@ calls
+route :: ( Monad m
+         ) => HandlerT (MiddlewareT m) sec m a
            -> MiddlewareT m
-route hs = extractMatch hs . extractMatchAny hs
+route hs app req resp = do
+  let path = pathInfo req
+  mMatch <- extractMatch path hs
+  case mMatch of
+    Nothing -> do
+      mMatch <- extractMatchAny path hs
+      maybe
+        (app req resp)
+        (\mid -> mid app req resp)
+        mMatch
+    Just mid -> mid app req resp
 
-{-# INLINEABLE route #-}
-
-
--- | Given a security verification function that returns a method to updating the session,
--- turn a set of routes containing @MiddlewareT@s into a @MiddlewareT@, where a session
--- is secured before responding.
-routeAuth :: ( MonadIO m
+routeAuth :: ( Monad m
              , MonadThrow m
-             ) => (Request -> [sec] -> m (Response -> Response)) -- ^ authorize
-               -> RoutableT sec m () -- ^ Assembled @handle@ calls
+             ) => (Request -> [sec] -> m ())
+               -> HandlerT (MiddlewareT m) (SecurityToken sec) m a
                -> MiddlewareT m
-routeAuth authorize hs = extractAuth authorize hs . route hs
-
-{-# INLINEABLE routeAuth #-}
-
-
+routeAuth authorize hs app req resp = do
+  extractAuth authorize req hs
+  route hs app req resp
 
 -- * Extraction -------------------------------
 
 -- | Extracts only the normal 'match' and 'matchHere' (exactly matching content) routes into
--- a @MiddlewareT@, disregarding security and not-found responses.
-extractMatch :: ( MonadIO m
-                ) => HandlerT (MiddlewareT m) sec m a
-                  -> MiddlewareT m
-extractMatch !hs app req respond = do
-  let path = pathInfo req
+--   a @MiddlewareT@, disregarding security and not-found responses.
+extractMatch :: ( Monad m
+                ) => [T.Text]
+                  -> HandlerT r sec m a
+                  -> m (Maybe r)
+extractMatch path !hs = do
   trie <- trieContent <$> execHandlerT hs
   case matchWithLRPT trimFileExt path trie of
-    Nothing -> fromMaybe (app req respond) $ do
+    Nothing -> return $ do
       guard $ not (null path)
       guard $ trimFileExt (last path) == "index"
-      mid <- TC.lookup (init path) trie
-      Just $! mid app req respond
-    Just (_,mid) -> mid app req respond
+      TC.lookup (init path) trie
+    Just (_,r) -> return (Just r)
 
 {-# INLINEABLE extractMatch #-}
 
 
--- | Extracts only the @notFound@ responses into a @MiddlewareT@.
-extractMatchAny :: ( MonadIO m
-                   ) => HandlerT (MiddlewareT m) sec m a
-                     -> MiddlewareT m
-extractMatchAny = extractNearestVia (\x -> trieCatchAll <$> execHandlerT x)
+-- | Extracts only the @notFound@ responses
+extractMatchAny :: ( Monad m
+                   ) => [T.Text]
+                     -> HandlerT r sec m a
+                     -> m (Maybe r)
+extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execHandlerT x)
 
 {-# INLINEABLE extractMatchAny #-}
 
 
 
 -- | Find the security tokens / authorization roles affiliated with
--- a request for a set of routes.
+--   a request for a set of routes.
 extractAuthSym :: ( Monad m
-                  ) => HandlerT x (SecurityToken sec) m a
-                    -> Request
+                  ) => [T.Text]
+                    -> HandlerT x (SecurityToken sec) m a
                     -> m [sec]
-extractAuthSym hs req = do
+extractAuthSym path hs = do
   trie <- trieSecurity <$> execHandlerT hs
-  return $! foldr go [] $ PT.matchesRPT (pathInfo req) trie
+  return $! foldr go [] $ PT.matchesRPT path trie
   where
-    go (_,(SecurityToken _ DontProtectHere),[]) ys = ys
-    go (_,(SecurityToken x _              ),_ ) ys = x:ys
+    go (_,SecurityToken _ DontProtectHere,[]) ys = ys
+    go (_,SecurityToken x _              ,_ ) ys = x:ys
 
 {-# INLINEABLE extractAuthSym #-}
 
 -- | Extracts only the security handling logic into a @MiddlewareT@.
-extractAuth :: ( MonadIO m
+extractAuth :: ( Monad m
                , MonadThrow m
-               ) => (Request -> [sec] -> m (Response -> Response)) -- authorization method
+               ) => (Request -> [sec] -> m ()) -- authorization method
+                 -> Request
                  -> HandlerT x (SecurityToken sec) m a
-                 -> MiddlewareT m
-extractAuth authorize hs app req respond = do
-  ss <- extractAuthSym hs req
-  f <- authorize req ss
-  app req (respond . f)
+                 -> m ()
+extractAuth authorize req hs = do
+  ss <- extractAuthSym (pathInfo req) hs
+  authorize req ss
 
 {-# INLINEABLE extractAuth #-}
 
 
 -- | Given a way to draw out a special-purpose trie from our route set, route
--- to the responses based on a /furthest-reached/ method.
-extractNearestVia :: ( MonadIO m
-                     ) => (HandlerT (MiddlewareT m) sec m a -> m (RootedPredTrie T.Text (MiddlewareT m)))
-                       -> HandlerT (MiddlewareT m) sec m a
-                       -> MiddlewareT m
-extractNearestVia extr hs app req respond = do
+--   to the responses based on a /furthest-reached/ method.
+extractNearestVia :: ( Monad m
+                     ) => [T.Text]
+                       -> (HandlerT r sec m a -> m (RootedPredTrie T.Text r))
+                       -> HandlerT r sec m a
+                       -> m (Maybe r)
+extractNearestVia path extr hs = do
   trie <- extr hs
-  maybe (app req respond)
-        (\(_,mid,_) -> mid app req respond)
-      $! PT.matchRPT (pathInfo req) trie
+  pure (mid <$> PT.matchRPT path trie)
+  where
+    mid (_,r,_) = r
 
 {-# INLINEABLE extractNearestVia #-}
 

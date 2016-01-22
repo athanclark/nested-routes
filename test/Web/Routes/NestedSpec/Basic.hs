@@ -41,7 +41,8 @@ authorize req ss | null ss   = return id
                  | otherwise = throwM NeedsAuth
 
 defApp :: Application
-defApp _ respond = respond $ textOnlyStatus status404 "404 :("
+defApp _ respond = respond $
+  (textOnly "404 :(") { responseStatus = status400 }
 
 successMiddleware :: Middleware
 successMiddleware _ _ respond = respond $ textOnly "200!"
@@ -77,4 +78,5 @@ app =
     bazRoute = l_ "baz" </> o_
 
 unauthHandle :: AuthErr -> Middleware
-unauthHandle NeedsAuth _ _ respond = respond $ textOnlyStatus status401 "Unauthorized!"
+unauthHandle NeedsAuth _ _ respond = respond $
+  (textOnly "Unauthorized!") { responseStatus = status401 }

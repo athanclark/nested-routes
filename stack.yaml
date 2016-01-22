@@ -3,32 +3,17 @@ packages:
 - '.'
 - location:
     git: https://github.com/athanclark/wai-middleware-content-type
-    commit: 20e49185abd2dbed6eaf2222e829b91a4de69ff4
-  extra-dep: true
-- location:
-    git: https://github.com/athanclark/wai-middleware-verbs
-    commit: 2ee9985619084f02eb4423ca95874f331f6e014b
-  extra-dep: true
-- location:
-    git: https://github.com/athanclark/wai-transformers
-    commit: a72b2c061fedf1e131dd0a64da008312003e150b
-  extra-dep: true
-- location:
-    git: https://github.com/athanclark/pred-trie
-    commit: a209cf69e40f5182d11c0fa4e59ada1b0b6e42ba
-  extra-dep: true
-- location:
-    git: https://github.com/athanclark/tries
-    commit: eb740126072a1c8da175cd28caadbff7bef3e7f5
+    commit: 3ef187df2f3677969623fc8ab678bef6eb89c314
   extra-dep: true
 extra-deps:
   - composition-extra-2.0.0
   - tries-0.0.4
   - rose-trees-0.0.3
-  - pred-trie-0.4.1
+  - pred-trie-0.5.0
   - wai-util-0.8
   - http-accept-0.2
   - poly-arity-0.0.7
   - wai-transformers-0.0.4
-  - wai-middleware-verbs-0.1.1
-resolver: nightly-2015-12-10
+  - wai-middleware-verbs-0.2.0
+  - wai-middleware-content-type-0.3.0
+resolver: nightly-2016-01-19

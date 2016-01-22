@@ -41,8 +41,7 @@ Library
   HS-Source-Dirs:       src
   GHC-Options:          -Wall
   Exposed-Modules:      Web.Routes.Nested
-                        Web.Routes.Nested.Types
-                        Web.Routes.Nested.Types.UrlChunks
+                        Web.Routes.Nested.Match
   Build-Depends:        base >= 4.8 && < 5
                       , attoparsec
                       , bytestring
@@ -52,7 +51,7 @@ Library
                       , hashable
                       , mtl
                       , poly-arity >= 0.0.7
-                      , pred-trie >= 0.4.0
+                      , pred-trie >= 0.5.0
                       , regex-compat
                       , semigroups
                       , text
@@ -60,8 +59,8 @@ Library
                       , tries
                       , unordered-containers
                       , wai-transformers >= 0.0.4
-                      , wai-middleware-content-type >= 0.1.1.1
-                      , wai-middleware-verbs >= 0.1.1
+                      , wai-middleware-content-type >= 0.3.0
+                      , wai-middleware-verbs >= 0.2.0
 
 
 Test-Suite test
@@ -76,7 +75,6 @@ Test-Suite test
                         Web.Routes.NestedSpec.Basic
                         Web.Routes.Nested
                         Web.Routes.Nested.Types
-                        Web.Routes.Nested.Types.UrlChunks
   Build-Depends:        base
                       , nested-routes
                       , attoparsec
@@ -114,7 +112,6 @@ Executable example
   Main-Is:              Main.hs
   Other-Modules:        Web.Routes.Nested
                         Web.Routes.Nested.Types
-                        Web.Routes.Nested.Types.UrlChunks
   Build-Depends:        base
                       , nested-routes >= 7
                       , attoparsec
@@ -152,7 +149,6 @@ Executable example-stm
   Other-Modules:        STM.Auth
                         Web.Routes.Nested
                         Web.Routes.Nested.Types
-                        Web.Routes.Nested.Types.UrlChunks
   Build-Depends:        base
                       , base64-bytestring
                       , blaze-builder

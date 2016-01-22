@@ -2,14 +2,12 @@
     GADTs
   , DataKinds
   , RankNTypes
-  , BangPatterns
   , TypeOperators
-  , KindSignatures
   , OverloadedStrings
   #-}
 
 {- |
-Module      : Web.Routes.Nested
+Module      : Web.Routes.Nested.Match
 Copyright   : (c) 2015 Athan Clark
 
 License     : BSD-style
@@ -18,7 +16,7 @@ Stability   : experimental
 Portability : GHC
 -}
 
-module Web.Routes.Nested.Types.UrlChunks
+module Web.Routes.Nested.Match
   ( -- * Path Combinators
     o_
   , origin_
@@ -32,32 +30,32 @@ module Web.Routes.Nested.Types.UrlChunks
   , regex_
   , pred_
   , (</>)
-  , -- * Path Types
-    EitherUrlChunk (..)
-  , UrlChunks (..)
+  , -- ** Path Types
+    EitherUrlChunk
+  , UrlChunks
   ) where
 
+import Prelude hiding (pred)
 import Data.Attoparsec.Text
 import Text.Regex
-import Data.String (IsString (..))
 import qualified Data.Text as T
 import Control.Monad
 import Control.Error (hush)
-
+import Data.Trie.Pred
 
 
 o_, origin_ :: UrlChunks '[]
 o_ = origin_
 
 -- | The /Origin/ chunk - the equivalent to @[]@
-origin_ = Root
+origin_ = nil
 
 
 l_, literal_ :: T.Text -> EitherUrlChunk 'Nothing
 l_ = literal_
 
 -- | Match against a /Literal/ chunk
-literal_ = Lit
+literal_ = only
 
 f_, file_ :: T.Text -> EitherUrlChunk ('Just T.Text)
 f_ = file_
@@ -81,31 +79,22 @@ regex_ i q = pred_ i (matchRegex q . T.unpack)
 
 -- | Match with a predicate against the url chunk directly.
 pred_ :: T.Text -> (T.Text -> Maybe r) -> EitherUrlChunk ('Just r)
-pred_ = Pred
+pred_ = pred
 
 
 -- | Constrained to AttoParsec, Regex-Compat and T.Text
-data EitherUrlChunk (x :: Maybe *) where
-  Lit  { litChunk :: {-# UNPACK #-} !T.Text
-       } :: EitherUrlChunk 'Nothing
-  Pred { predTag  :: {-# UNPACK #-} !T.Text
-       , predPred :: !(T.Text -> Maybe r)
-       } :: EitherUrlChunk ('Just r)
-
--- | Use raw strings instead of prepending @l@
-instance x ~ 'Nothing => IsString (EitherUrlChunk x) where
-  fromString = literal_ . T.pack
+type EitherUrlChunk = PathChunk T.Text
 
 
 -- | Container when defining route paths
-data UrlChunks (xs :: [Maybe *]) where
-  Cons :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs) -- stack is left-to-right
-  Root :: UrlChunks '[]
+type UrlChunks = PathChunks T.Text
 
 
 
 -- | Prefix a routable path by more predicative lookup data.
 (</>) :: EitherUrlChunk mx -> UrlChunks xs -> UrlChunks (mx ': xs)
-(</>) = Cons
+(</>) = (./)
 
 infixr 9 </>
+
+

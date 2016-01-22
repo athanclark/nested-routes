@@ -1,79 +1,72 @@
 {-# LANGUAGE
-    GADTs
-  , TypeOperators
-  , TypeFamilies
-  , KindSignatures
-  , DataKinds
-  , RankNTypes
-  , FlexibleInstances
-  , UndecidableInstances
-  , MultiParamTypeClasses
-  , FunctionalDependencies
+    DeriveFunctor
   , ConstraintKinds
+  , TypeFamilies
+  , FlexibleContexts
+  , GeneralizedNewtypeDeriving
   #-}
 
-module Web.Routes.Nested.Types
-  ( Singleton (..)
-  , Extend (..)
-  , Extrude (..)
-  , CatMaybes
-  , module Web.Routes.Nested.Types.UrlChunks
-  ) where
+module Web.Routes.Nested.Types where
 
-import           Web.Routes.Nested.Types.UrlChunks
+import           Web.Routes.Nested.Match
+import           Network.Wai.Middleware.Verbs
+import           Network.Wai.Middleware.ContentType
+import           Network.Wai.Trans
+import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
+import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..), CatMaybes)
+
+import           Data.Monoid
 import qualified Data.Text as T
-import           Data.Trie.Pred
-import           Data.Trie.Pred.Step
-import qualified Data.Trie.HashMap as HT
-import qualified Data.HashMap.Lazy as HM
+import           Data.Function.Poly
+import           Control.Monad.Trans
+import qualified Control.Monad.State                as S
+import           Control.Monad
+import           Control.Monad.IO.Class
+import           Control.Monad.Catch
 
 
--- | Convenience type-level function for removing 'Nothing's from a type list.
-type family CatMaybes (xs :: [Maybe *]) :: [*] where
-  CatMaybes '[]               = '[]
-  CatMaybes ('Nothing  ': xs) =      CatMaybes xs
-  CatMaybes (('Just x) ': xs) = x ': CatMaybes xs
 
--- | Creates a string of nodes - a trie with a width of 1.
-class Singleton chunks a trie | chunks a -> trie where
-  singleton :: chunks -> a -> trie
+data Tries x s = Tries
+  { trieContent  :: !(RootedPredTrie T.Text x)
+  , trieCatchAll :: !(RootedPredTrie T.Text x)
+  , trieSecurity :: !(RootedPredTrie T.Text s)
+  }
 
--- Basis
-instance Singleton (UrlChunks '[]) a (RootedPredTrie T.Text a) where
-  singleton Root r = RootedPredTrie (Just r) emptyPT
+instance Monoid (Tries x s) where
+  mempty = Tries mempty mempty mempty
+  mappend (Tries x1 x2 x3) (Tries y1 y2 y3) =
+    ((Tries $! x1 <> y1)
+            $! x2 <> y2)
+            $! x3 <> y3
 
--- Successor
-instance ( Singleton (UrlChunks xs) a trie0
-         , Extend (EitherUrlChunk x) trie0 trie1
-         ) => Singleton (UrlChunks (x ': xs)) a trie1 where
-  singleton (Cons u us) r = extend u $! singleton us r
+-- | Will have a shape of @HandlerT (MiddlewareT m) (SecurityToken s) m a@
+--   when used.
+newtype HandlerT x sec m a = HandlerT
+  { runHandlerT :: S.StateT (Tries x sec) m a
+  } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
+             , S.MonadState (Tries x sec))
+
+execHandlerT :: Monad m => HandlerT x sec m a -> m (Tries x sec)
+execHandlerT hs = S.execStateT (runHandlerT hs) mempty
+
+{-# INLINEABLE execHandlerT #-}
+
+type ExtrudeSoundly cleanxs xs c r =
+  ( cleanxs ~ CatMaybes xs
+  , ArityTypeListIso c cleanxs r
+  , Extrude (UrlChunks xs)
+      (RootedPredTrie T.Text c)
+      (RootedPredTrie T.Text r)
+  )
 
 
--- | Turn a list of tries (@Rooted@) into a node with those children
-class Extend eitherUrlChunk child result | eitherUrlChunk child -> result where
-  extend :: eitherUrlChunk -> child -> result
+type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
 
--- | Literal case
-instance Extend (EitherUrlChunk  'Nothing) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
-  extend (Lit t) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
-    PredTrie (HT.HashMapStep $! HM.singleton t (HT.HashMapChildren mx $ Just xs)) mempty
-
--- | Existentially quantified case
-instance Extend (EitherUrlChunk ('Just r)) (RootedPredTrie T.Text (r -> a)) (RootedPredTrie T.Text a) where
-  extend (Pred i q) (RootedPredTrie mx xs) = RootedPredTrie Nothing $
-    PredTrie mempty (PredSteps [PredStep i q mx xs])
-
-
--- | @FoldR Extend start chunks ~ result@
-class Extrude chunks start result | chunks start -> result where
-  extrude :: chunks -> start -> result
-
--- Basis
-instance Extrude (UrlChunks '[]) (RootedPredTrie T.Text a) (RootedPredTrie T.Text a) where
-  extrude Root r = r
-
--- Successor
-instance ( Extrude (UrlChunks xs) trie0 trie1
-         , Extend (EitherUrlChunk x) trie1 trie2 ) => Extrude (UrlChunks (x ': xs)) trie0 trie2 where
-  extrude (Cons u us) r = extend u $! extrude us r
-
+action :: Monad m => ActionT m () -> MiddlewareT m
+action xs app req respond = do
+  vmap <- execVerbListenerT (mapVerbs fileExtsToMiddleware xs)
+  let v = getVerb req
+  mMid <- lookupVerb req v vmap
+  case mMid of
+    Nothing  -> app req respond
+    Just mid -> mid app req respond
