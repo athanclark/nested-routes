@@ -42,6 +42,7 @@ Library
   GHC-Options:          -Wall
   Exposed-Modules:      Web.Routes.Nested
                         Web.Routes.Nested.Match
+                        Web.Routes.Nested.Types
   Build-Depends:        base >= 4.8 && < 5
                       , attoparsec
                       , bytestring
