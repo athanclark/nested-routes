@@ -3,7 +3,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/athanclark/wai-middleware-content-type
-    commit: 3ef187df2f3677969623fc8ab678bef6eb89c314
+    commit: f7f00f799d83919b2945801c46e48bbc9c47be90
   extra-dep: true
 extra-deps:
   - composition-extra-2.0.0

@@ -64,35 +64,39 @@ order you like for your application.
 
 
 module Web.Routes.Nested
-  ( module X
-  -- * Types
-  , Tries (..)
+  ( -- * Types
+    Tries (..)
   , HandlerT (..)
   , execHandlerT
   , SecurityToken (..)
   , AuthScope (..)
   , ExtrudeSoundly
-  -- * Combinators
-  , match
+  , -- * Combinators
+    match
   , matchHere
   , matchAny
   , matchGroup
   , auth
-  -- * Routing
-  , route
+  , -- * Routing
+    route
   , routeAuth
   , extractMatch
   , extractMatchAny
   , extractAuthSym
   , extractAuth
   , extractNearestVia
+  , -- * Re-Exports
+    module Web.Routes.Nested.Match
+  , module Web.Routes.Nested.Types
+  , module Network.Wai.Middleware.Verbs
+  , module Network.Wai.Middleware.ContentType
   ) where
 
-import           Web.Routes.Nested.Match            as X
-import           Web.Routes.Nested.Types            as X
-import           Network.Wai.Trans                  as X
-import           Network.Wai.Middleware.Verbs       as X
-import           Network.Wai.Middleware.ContentType as X
+import           Web.Routes.Nested.Match
+import           Web.Routes.Nested.Types hiding (responseStatus)
+import           Network.Wai.Trans
+import           Network.Wai.Middleware.Verbs
+import           Network.Wai.Middleware.ContentType
 
 import qualified Data.Trie.Pred.Base                as PT -- only using lookups
 import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))

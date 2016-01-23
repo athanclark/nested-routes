@@ -60,7 +60,7 @@ type ExtrudeSoundly cleanxs xs c r =
   )
 
 
-type ActionT m a = VerbListenerT (FileExtListenerT Response m a) m a
+type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
 
 action :: Monad m => ActionT m () -> MiddlewareT m
 action xs app req respond = do
