@@ -93,10 +93,10 @@ module Web.Routes.Nested
   ) where
 
 import           Web.Routes.Nested.Match
-import           Web.Routes.Nested.Types hiding (responseStatus)
+import           Web.Routes.Nested.Types
 import           Network.Wai.Trans
 import           Network.Wai.Middleware.Verbs
-import           Network.Wai.Middleware.ContentType
+import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
 
 import qualified Data.Trie.Pred.Base                as PT -- only using lookups
 import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))

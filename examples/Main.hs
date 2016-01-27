@@ -24,7 +24,8 @@ import Control.Monad.Catch
 
 
 defApp :: Application
-defApp _ respond = respond $ textOnlyStatus status404 "404 :("
+defApp _ respond = respond
+                 $ textOnly "404 :(" status404 []
 
 main :: IO ()
 main = run 3000 $
@@ -34,13 +35,15 @@ main = run 3000 $
   ) defApp
   where
     handleUploadError u = fileExtsToMiddleware $
-      case u of
-        NoChunkedBody  -> text "No chunked body allowed!"
-        UploadTooLarge -> text "Upload too large"
+      overFileExts [Text] (mapStatus $ const status400) $
+        case u of
+          NoChunkedBody  -> text "No chunked body allowed!"
+          UploadTooLarge -> text "Upload too large"
 
     handleAuthError e = fileExtsToMiddleware $
-      case e of
-        NeedsAuth -> text "Authentication needed"
+      overFileExts [Text] (mapStatus $ const status400) $
+        case e of
+          NeedsAuth -> text "Authentication needed"
 
 -- | A set of symbolic security roles
 data AuthRole = AuthRole
@@ -70,8 +73,8 @@ instance Exception AuthError
 --   avoid runtime exceptions.
 authorize :: ( Monad m
              , MonadThrow m
-             ) => Request -> [AuthRole] -> m (Response -> Response)
-authorize req ss | null ss   = return id
+             ) => Request -> [AuthRole] -> m ()
+authorize req ss | null ss   = return ()
                  | otherwise = throwM NeedsAuth
 
 -- | The error thrown during the uploading function
@@ -84,16 +87,16 @@ instance Exception UploadError
 
 routes :: ( MonadIO m
           , MonadThrow m
-          ) => RoutableT AuthRole m ()
+          ) => HandlerT (MiddlewareT m) (SecurityToken AuthRole) m ()
 routes = do
   matchHere (action rootHandle)
-  matchGroup ("foo" </> o_) $ do
+  matchGroup (l_ "foo" </> o_) $ do
     matchHere (action fooHandle)
     auth AuthRole DontProtectHere
-    match ("bar" </> o_) (action barHandle)
+    match (l_ "bar" </> o_) (action barHandle)
   match (p_ "double" double </> o_) doubleHandle
   match emailRoute emailHandle
-  match ("baz" </> o_) (action bazHandle)
+  match (l_ "baz" </> o_) (action bazHandle)
   matchAny (action notFoundHandle)
   where
     rootHandle :: MonadIO m => ActionT m ()
@@ -141,4 +144,6 @@ routes = do
 
 
     notFoundHandle :: MonadIO m => ActionT m ()
-    notFoundHandle = get $ textStatus status404 "Not Found :("
+    notFoundHandle = get $
+      overFileExts [Text] (mapStatus $ const status400) $
+        text "Not Found :("

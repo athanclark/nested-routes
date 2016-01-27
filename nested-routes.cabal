@@ -31,11 +31,6 @@ Flag Example
   Description:          Build the trivial example.
   Default:              False
 
-Flag Example-STM
-  Description:          Build the Sha512 / STM nonce cache example.
-  Default:              False
-
-
 Library
   Default-Language:     Haskell2010
   HS-Source-Dirs:       src
@@ -136,55 +131,6 @@ Executable example
                       , wai-middleware-verbs
                       , warp
 
-
-Executable example-stm
-  if flag(Example-STM)
-    Buildable: True
-  else
-    Buildable: False
-  Default-Language:     Haskell2010
-  HS-Source-Dirs:       src
-                      , examples
-  GHC-Options:          -Wall
-  Main-Is:              STM.hs
-  Other-Modules:        STM.Auth
-                        Web.Routes.Nested
-                        Web.Routes.Nested.Types
-  Build-Depends:        base
-                      , base64-bytestring
-                      , blaze-builder
-                      , nested-routes
-                      , attoparsec
-                      , bytestring
-                      , composition-extra
-                      , cookie
-                      , cryptonite
-                      , data-default
-                      , errors
-                      , exceptions
-                      , hashable
-                      , http-types
-                      , iso8601-time
-                      , lucid
-                      , memory
-                      , mtl
-                      , poly-arity
-                      , pred-trie
-                      , regex-compat
-                      , semigroups
-                      , stm
-                      , text
-                      , time
-                      , transformers
-                      , tries
-                      , unordered-containers
-                      , wai-extra
-                      , wai-middleware-content-type
-                      , wai-middleware-verbs
-                      , wai-transformers
-                      , wai-session
-                      , warp
-                      , utf8-string
 
 Source-Repository head
   Type:                 git
