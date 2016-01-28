@@ -64,7 +64,6 @@ module Web.Routes.Nested
   , -- * Metadata
     SecurityToken (..)
   , AuthScope (..)
-  , ExtrudeSoundly
   , -- * Re-Exports
     module Web.Routes.Nested.Match
   , module Web.Routes.Nested.Types

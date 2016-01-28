@@ -12,17 +12,14 @@ import           Web.Routes.Nested.Match
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType
 import           Network.Wai.Trans
-import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
-import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..), CatMaybes)
+import           Data.Trie.Pred.Base                (RootedPredTrie (..))
+import           Data.Trie.Pred.Interface.Types     (Extrude (..), CatMaybes)
 
 import           Data.Monoid
 import qualified Data.Text as T
 import           Data.Function.Poly
 import           Control.Monad.Trans
 import qualified Control.Monad.State                as S
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Control.Monad.Catch
 
 
 -- | The internal data structure built during route declaration.
