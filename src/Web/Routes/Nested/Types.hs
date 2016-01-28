@@ -25,7 +25,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Catch
 
 
-
+-- | The internal data structure built during route declaration.
 data Tries x s = Tries
   { trieContent  :: !(RootedPredTrie T.Text x)
   , trieCatchAll :: !(RootedPredTrie T.Text x)
@@ -39,18 +39,22 @@ instance Monoid (Tries x s) where
             $! x2 <> y2)
             $! x3 <> y3
 
--- | Will have a shape of @HandlerT (MiddlewareT m) (SecurityToken s) m a@
---   when used.
+-- | The return type of a route building expression like `match` -
+--   it should have a shape of @HandlerT (MiddlewareT m) (SecurityToken s) m a@
+--   when used with `route`.
 newtype HandlerT x sec m a = HandlerT
   { runHandlerT :: S.StateT (Tries x sec) m a
   } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
              , S.MonadState (Tries x sec))
 
+-- | Run the monad, only getting the built state and throwing away @a@.
 execHandlerT :: Monad m => HandlerT x sec m a -> m (Tries x sec)
 execHandlerT hs = S.execStateT (runHandlerT hs) mempty
 
 {-# INLINEABLE execHandlerT #-}
 
+-- | Deductive proof that prepending a list of types to a function as arity
+--   can be deconstructed.
 type ExtrudeSoundly cleanxs xs c r =
   ( cleanxs ~ CatMaybes xs
   , ArityTypeListIso c cleanxs r
@@ -59,9 +63,11 @@ type ExtrudeSoundly cleanxs xs c r =
       (RootedPredTrie T.Text r)
   )
 
-
+-- | The type of content builders.
 type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
 
+-- | Run the content builder into a middleware that responds when the content
+--   is satisfiable (i.e. @Accept@ headers are O.K., etc.)
 action :: Monad m => ActionT m () -> MiddlewareT m
 action xs app req respond = do
   vmap <- execVerbListenerT (mapVerbs fileExtsToMiddleware xs)

@@ -20,9 +20,7 @@ Description:
   <https://hackage.haskell.org/package/attoparsec Attoparsec>
   parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions>
   /directly/ in our routes, with our handlers
-  reflecting their results. You can find more information in the
-  <https://www.fpcomplete.com/user/AthanClark/nested-routes demo>.
-  and the examples.
+  reflecting their results.
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
 

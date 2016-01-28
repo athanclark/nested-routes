@@ -31,12 +31,6 @@ all the tools from <https://hackage.haskell.org/package/wai-middleware-verbs wai
 type aliases wrapped around WAI's @Application@ and @Middleware@ types, allowing us
 to embed monad transformer stacks for our applications.
 
-The routing system lets you embed these complicated HTTP verb / content-type
-sensative responses just as easily as a WAI @Middleware@. There is enough
-tooling provided to use one paradigm or the other. Note - nested-routes
-does not affect the @pathInfo@ of the incoming @Request@ in any way, but merely
-matches on it and passes control to the designated response.
-
 To match a route, you have a few options - you can match against a string literal,
 a regular expression (via <https://hackage.haskell.org/package/regex-compat regex-compat>),
 or an <https://hackage.haskell.org/package/attoparsec attoparsec> parser. This list
@@ -44,34 +38,16 @@ will most likely grow in the future, depending on demand.
 
 There is also support for embedding security layers in your routes, in the same
 nested manner. By "tagging" a set of routes with an authorization role (with @auth@),
-you populate a list of roles breached during any request. In the authentication
-parameter in @routeAuth@ and @routeActionAuth@, the function
-keeps the session integrity in-place, while @auth@ lets you create your authorization
-boundaries. Both are symbiotic and neccessary for establishing security, and both allow
-you to tap into the monad transformer stack to do logging, STM, database queries,
+you populate a list of roles breached during any request. The function argument to
+'routeAuth' guards a Request to pass or fail at the high level, while 'auth' lets
+you create your authorization boundaries on a case-by-case basis. Both allow
+you to tap into the monad transformer stack for logging, STM variables, database queries,
 etc.
-
-To use your set of routes in a WAI application, you need to "extract" the
-functionality from your route set - using the @route@, @routeAuth@, @routeAction@,
-and @routeActionAuth@
-functions, you can create monolithic apps very easily.
-But, if you would like to extract the security middleware to place before
-say, a /static/ middleware you already have in place, use the @extractAuth@
-functions, and others for their respective purposes. This way, you can decompose
-the routing system into each subject matter, and re-compose (@.@) them in whichever
-order you like for your application.
 -}
 
 
 module Web.Routes.Nested
-  ( -- * Types
-    Tries (..)
-  , HandlerT (..)
-  , execHandlerT
-  , SecurityToken (..)
-  , AuthScope (..)
-  , ExtrudeSoundly
-  , -- * Combinators
+  ( -- * Combinators
     match
   , matchHere
   , matchAny
@@ -85,6 +61,10 @@ module Web.Routes.Nested
   , extractAuthSym
   , extractAuth
   , extractNearestVia
+  , -- * Metadata
+    SecurityToken (..)
+  , AuthScope (..)
+  , ExtrudeSoundly
   , -- * Re-Exports
     module Web.Routes.Nested.Match
   , module Web.Routes.Nested.Types
@@ -125,18 +105,15 @@ import           Control.Monad.Trans
 --   list created from the list of parsers, regular expressions, or arbitrary predicates
 --   /in the order written/ - so something like:
 --
---   > match (p_ ("double-parser", Data.Attoparsec.Text.double </> o_))
---   >   handle
+--   > match (p_ "double-parser" double </> o_)
+--   >   handler
 --
---   ...then @handle@ /must/ have an arity __ending__ in @Double ->@ - if this
+--   ...then @handler@ /must/ have arity @Double ->@. If this
 --   route was at the top level, then the total arity __must__ be @Double -> MiddlewareT m@.
---   (notice 'Web.Routes.Nested.Types.HasResult' -
 --
---   > HasResult childContent (MiddlewareT m)
---
---   Basically, if the routes you are building in the current scope get grouped
---   by a predicate (which creates another data type to handle) with 'group',
---   then we would need another variable of arity /before/ the @Double@.
+--   Generally, if the routes you are building get grouped
+--   by a predicate with 'matchGroup',
+--   then we would need another level of arity /before/ the @Double@.
 match :: ( Monad m
          , Singleton (UrlChunks xs)
              childContent
@@ -154,7 +131,7 @@ match !ts !vl =
 
 {-# INLINEABLE match #-}
 
--- | Create a handle for the /current/ route - an alias for @\h -> match o_ handle@.
+-- | Create a handle for the /current/ route - an alias for @\h -> match o_ h@.
 matchHere :: ( Monad m
              ) => content
                -> HandlerT content sec m ()
@@ -164,7 +141,7 @@ matchHere = match origin_
 
 
 -- | Match against any route, as a last resort against all failing matches -
---   most people use this for a catch-all at some level in their routes, something
+--   use this for a catch-all at some level in their routes, something
 --   like a @not-found 404@ page is useful.
 matchAny :: ( Monad m
             ) => content
@@ -255,8 +232,7 @@ routeAuth authorize hs app req resp = do
 
 -- * Extraction -------------------------------
 
--- | Extracts only the normal 'match' and 'matchHere' (exactly matching content) routes into
---   a @MiddlewareT@, disregarding security and not-found responses.
+-- | Extracts only the normal 'match' and 'matchHere'
 extractMatch :: ( Monad m
                 ) => [T.Text]
                   -> HandlerT r sec m a
@@ -299,7 +275,7 @@ extractAuthSym path hs = do
 
 {-# INLINEABLE extractAuthSym #-}
 
--- | Extracts only the security handling logic into a @MiddlewareT@.
+-- | Extracts only the security handling logic, and turns it into a guard
 extractAuth :: ( Monad m
                , MonadThrow m
                ) => (Request -> [sec] -> m ()) -- authorization method
