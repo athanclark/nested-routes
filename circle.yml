@@ -6,9 +6,8 @@ dependencies:
     - gunzip /tmp/stack.gz && chmod +x /tmp/stack
     - sudo mv /tmp/stack /usr/bin/stack
   override:
-    - stack setup
-    - stack build
+    - stack upgrade --git --no-system-ghc --install-ghc
 
 test:
   override:
-    - stack test
+    - stack test --no-system-ghc --install-ghc
