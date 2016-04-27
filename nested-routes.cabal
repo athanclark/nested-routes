@@ -116,9 +116,11 @@ Executable example
                       , errors
                       , exceptions
                       , hashable
+                      , hashtables
                       , http-types
                       , mtl
                       , poly-arity
+                      , pred-set
                       , pred-trie
                       , regex-compat
                       , semigroups
