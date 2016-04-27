@@ -77,6 +77,12 @@ import           Network.Wai.Trans
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
 
+import Data.Foldable (foldlM)
+import qualified Data.HashTable.ST.Basic            as HT
+import           Data.PredSet.Mutable               as HS
+import           Data.Trie.Pred.Mutable             (HashTableTrie (..), RootedHashTableTrie (..), RawValue (..))
+import qualified Data.Trie.Pred.Mutable             as MPT
+import           Data.Trie.Pred.Mutable.Morph       (toMutableRooted)
 import qualified Data.Trie.Pred.Base                as PT -- only using lookups
 import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
 import           Data.Trie.Pred.Base.Step           (PredStep (..), PredSteps (..))
@@ -91,11 +97,13 @@ import           Data.Hashable
 import           Data.Monoid
 import           Data.Functor.Syntax
 import           Data.Function.Poly
+import Data.Typeable
 
 import           Control.Monad
 import qualified Control.Monad.State                as S
 import           Control.Monad.Catch
 import           Control.Monad.Trans
+import           Control.Monad.ST
 
 
 -- | Embed a 'Network.Wai.Trans.MiddlewareT' into a set of routes via a matching string. You should
@@ -206,6 +214,8 @@ auth !token !scope =
 -- * Routing ---------------------------------------
 
 route :: ( Monad m
+         , MonadIO m
+         , Typeable m
          ) => HandlerT (MiddlewareT m) sec m a
            -> MiddlewareT m
 route hs app req resp = do
@@ -221,7 +231,10 @@ route hs app req resp = do
     Just mid -> mid app req resp
 
 routeAuth :: ( Monad m
+             , MonadIO m
              , MonadThrow m
+             , Typeable sec
+             , Typeable m
              ) => (Request -> [sec] -> m ())
                -> HandlerT (MiddlewareT m) (SecurityToken sec) m a
                -> MiddlewareT m
@@ -233,23 +246,31 @@ routeAuth authorize hs app req resp = do
 
 -- | Extracts only the normal 'match' and 'matchHere'
 extractMatch :: ( Monad m
+                , MonadIO m
+                , Typeable r
                 ) => [T.Text]
                   -> HandlerT r sec m a
                   -> m (Maybe r)
 extractMatch path !hs = do
-  trie <- trieContent <$> execHandlerT hs
-  case matchWithLRPT trimFileExt path trie of
-    Nothing -> return $ do
-      guard $ not (null path)
-      guard $ trimFileExt (last path) == "index"
-      TC.lookup (init path) trie
-    Just (_,r) -> return (Just r)
+  tries <- execHandlerT hs
+  liftIO $ stToIO $ do
+    trie <- trieContentMutable tries
+    mResult <- matchWithLRPT trimFileExt path trie
+    case mResult of
+      Nothing ->
+        if not (null path)
+           && trimFileExt (last path) == "index"
+        then MPT.lookupR (init path) trie
+        else pure Nothing
+      Just (_,r,_) -> return (Just r)
 
 {-# INLINEABLE extractMatch #-}
 
 
 -- | Extracts only the @notFound@ responses
 extractMatchAny :: ( Monad m
+                   , MonadIO m
+                   , Typeable r
                    ) => [T.Text]
                      -> HandlerT r sec m a
                      -> m (Maybe r)
@@ -262,12 +283,16 @@ extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execHandle
 -- | Find the security tokens / authorization roles affiliated with
 --   a request for a set of routes.
 extractAuthSym :: ( Monad m
+                  , MonadIO m
+                  , Typeable sec
                   ) => [T.Text]
                     -> HandlerT x (SecurityToken sec) m a
                     -> m [sec]
 extractAuthSym path hs = do
-  trie <- trieSecurity <$> execHandlerT hs
-  return $! foldr go [] $ PT.matchesRPT path trie
+  tries <- execHandlerT hs
+  liftIO . stToIO $ do
+    results <- MPT.matchesR path =<< trieSecurityMutable tries
+    pure $! foldr go [] results
   where
     go (_,SecurityToken _ DontProtectHere,[]) ys = ys
     go (_,SecurityToken x _              ,_ ) ys = x:ys
@@ -276,7 +301,9 @@ extractAuthSym path hs = do
 
 -- | Extracts only the security handling logic, and turns it into a guard
 extractAuth :: ( Monad m
+               , MonadIO m
                , MonadThrow m
+               , Typeable sec
                ) => (Request -> [sec] -> m ()) -- authorization method
                  -> Request
                  -> HandlerT x (SecurityToken sec) m a
@@ -290,14 +317,18 @@ extractAuth authorize req hs = do
 
 -- | Given a way to draw out a special-purpose trie from our route set, route
 --   to the responses based on a /furthest-reached/ method.
-extractNearestVia :: ( Monad m
+extractNearestVia :: ( MonadIO m
+                     , Monad m
+                     , Typeable r
                      ) => [T.Text]
                        -> (HandlerT r sec m a -> m (RootedPredTrie T.Text r))
                        -> HandlerT r sec m a
                        -> m (Maybe r)
 extractNearestVia path extr hs = do
   trie <- extr hs
-  pure (mid <$> PT.matchRPT path trie)
+  liftIO . stToIO $ do
+    mResult <- MPT.matchR path =<< toMutableRooted trie
+    pure (mid <$> mResult)
   where
     mid (_,r,_) = r
 
@@ -316,33 +347,105 @@ trimFileExt !s = fst $! T.breakOn "." s
 
 -- | A quirky function for processing the last element of a lookup path, only
 -- on /literal/ matches.
-matchWithLPT :: ( Hashable s
-                , Eq s
-                ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
-matchWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
-  | null ts   = getFirst $ First ((goLit $! f t) ls) <> foldMap (First . goPred) ps
-  | otherwise = getFirst $ First (goLit       t  ls) <> foldMap (First . goPred) ps
-  where
-    goLit t' xs = do
-      (HashMapChildren mx mxs) <- HM.lookup t' xs
-      if null ts
-      then ([t],) <$> mx
-      else fmap (\(ts',x) -> (t:ts',x)) $! matchWithLPT f (NE.fromList ts) =<< mxs
+-- matchWithLPT :: ( Hashable s
+--                 , Eq s
+--                 ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
+-- matchWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
+--   | null ts   = getFirst $ First ((goLit $! f t) ls) <> foldMap (First . goPred) ps
+--   | otherwise = getFirst $ First (goLit       t  ls) <> foldMap (First . goPred) ps
+--   where
+--     goLit t' xs = do
+--       (HashMapChildren mx mxs) <- HM.lookup t' xs
+--       if null ts
+--       then ([t],) <$> mx
+--       else fmap (\(ts',x) -> (t:ts',x)) $! matchWithLPT f (NE.fromList ts) =<< mxs
+-- 
+--     goPred (PredStep _ predicate mx xs) = do
+--       d <- predicate t
+--       if null ts
+--       then ([t],) <$> (mx <$~> d)
+--       else fmap (\(ts',x) -> (t:ts',x d)) $! matchWithLPT f (NE.fromList ts) xs
 
-    goPred (PredStep _ predicate mx xs) = do
-      d <- predicate t
-      if null ts
-      then ([t],) <$> (mx <$~> d)
-      else fmap (\(ts',x) -> (t:ts',x d)) $! matchWithLPT f (NE.fromList ts) xs
+matchWithLPT :: ( Eq k
+                , Hashable k
+                , Typeable s
+                , Typeable k
+                ) => PredSet s k
+                  -> (k -> k)
+                  -> NonEmpty k
+                  -> HashTableTrie s k a
+                  -> ST s (Maybe (NonEmpty k, a, [k]))
+matchWithLPT predSet f (k:|ks) (HashTableTrie raw preds) = do
+  mLit <- goLit raw
+  case mLit of
+    Just _  -> pure mLit
+    Nothing ->
+      let go solution@(Just _) _ = pure solution
+          go Nothing pred        = goPred pred
+      in  foldlM go Nothing preds
+  where
+    goLit xs = do
+      mx' <- if null ks
+             then HT.lookup raw (f k)
+             else HT.lookup raw k
+      case mx' of
+        Nothing -> pure Nothing
+        Just (RawValue mx children) ->
+          let mFoundHere = (\x -> (k:|[], x, ks)) <$> mx
+              prependAncestry (pre,x,suff) = (k:|NE.toList pre,x,suff)
+          in case ks of
+            [] -> pure mFoundHere
+            (k':ks') -> do
+              mFoundThere <- MPT.match predSet (k':|ks') children
+              pure $! getFirst $
+                   First (prependAncestry <$> mFoundThere)
+                <> First mFoundHere
+
+    goPred (MPT.PredStep predKey mx children) = do
+      mr' <- HS.lookup predKey k predSet
+      case mr' of
+        Nothing -> pure Nothing
+        Just r  ->
+          let mFoundHere = (\x -> (k:|[], x r, ks)) <$> mx
+              prependAncestryAndApply (pre,f,suff) =
+                (k:|NE.toList pre,f r,suff)
+          in case ks of
+            [] -> pure mFoundHere
+            (k':ks') -> do
+              mFoundThere <- MPT.match predSet (k':|ks') children
+              pure $! getFirst $
+                   First (prependAncestryAndApply <$> mFoundThere)
+                <> First mFoundHere
+
+
 
 {-# INLINEABLE matchWithLPT #-}
 
 
-matchWithLRPT :: ( Hashable s
-                 , Eq s
-                 ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
-matchWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
-matchWithLRPT f ts (RootedPredTrie _ xs) = matchWithLPT f (NE.fromList ts) xs
+--matchWithLRPT :: ( Hashable s
+--                 , Eq s
+--                 ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
+--matchWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
+--matchWithLRPT f ts (RootedPredTrie _ xs) = matchWithLPT f (NE.fromList ts) xs
+
+matchWithLRPT :: ( Eq k
+                 , Hashable k
+                 , Typeable s
+                 , Typeable k
+                 , Typeable a
+                 ) => (k -> k)
+                   -> [k]
+                   -> RootedHashTableTrie s k a
+                   -> ST s (Maybe ([k],a,[k]))
+matchWithLRPT _ [] (RootedHashTableTrie mx _ _) =
+  pure $! (\x -> ([],x,[])) <$> mx
+matchWithLRPT f (k:ks) (RootedHashTableTrie mx xs predSet) = do
+  mFoundThere <- matchWithLPT predSet f (k:|ks) xs
+  pure $! getFirst $
+      First ((\(pre,x,suff) -> (NE.toList pre,x,suff)) <$> mFoundThere)
+   <> First ((\x -> ([],x,k:ks)) <$> mx)
+
+
 
 {-# INLINEABLE matchWithLRPT #-}
 

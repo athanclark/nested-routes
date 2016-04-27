@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                7.0.0
+Version:                7.1.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -43,9 +43,11 @@ Library
                       , errors
                       , exceptions
                       , hashable
+                      , hashtables
                       , mtl
                       , poly-arity >= 0.0.7
-                      , pred-trie >= 0.5.0
+                      , pred-set >= 0.0.1
+                      , pred-trie >= 0.5.1
                       , regex-compat
                       , semigroups
                       , text
