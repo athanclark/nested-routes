@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                7.1.0
+Version:                7.1.0.1
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -120,6 +120,7 @@ Executable example
                       , exceptions
                       , hashable
                       , hashtables
+                      , HSet
                       , http-types
                       , mtl
                       , poly-arity
