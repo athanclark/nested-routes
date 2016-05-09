@@ -79,10 +79,13 @@ Test-Suite test
                       , errors
                       , exceptions
                       , hashable
+                      , hashtables
+                      , HSet
                       , http-types
                       , mtl
                       , poly-arity
                       , pred-trie
+                      , pred-set
                       , regex-compat
                       , semigroups
                       , text
