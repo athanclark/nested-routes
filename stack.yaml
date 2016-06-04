@@ -2,6 +2,8 @@ flags: {}
 packages:
 - '.'
 - '../pred-trie'
+- '../wai-transformers'
+- '../wai-middleware-verbs'
 - location:
     git: https://github.com/athanclark/wai-middleware-content-type
     commit: f7f00f799d83919b2945801c46e48bbc9c47be90

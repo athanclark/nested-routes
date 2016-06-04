@@ -1,5 +1,5 @@
 Name:                   nested-routes
-Version:                7.1.0.1
+Version:                7.1.1
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -56,7 +56,7 @@ Library
                       , unordered-containers
                       , wai-transformers >= 0.0.4
                       , wai-middleware-content-type >= 0.4.0
-                      , wai-middleware-verbs >= 0.2.0
+                      , wai-middleware-verbs >= 0.3.0
 
 
 Test-Suite test
