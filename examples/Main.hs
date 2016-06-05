@@ -21,6 +21,7 @@ import Data.Monoid
 import Data.Typeable
 import Control.Monad.IO.Class
 import Control.Monad.Catch
+import Control.Monad.Trans
 
 
 defApp :: Application
@@ -96,7 +97,7 @@ routes = do
     match (l_ "bar" </> o_) (action barHandle)
   match (p_ "double" double </> o_) doubleHandle
   match emailRoute emailHandle
-  match (l_ "baz" </> o_) (action bazHandle)
+  match (l_ "baz" </> o_) (\app req -> action (bazHandle req) app req)
   matchAny (action notFoundHandle)
   where
     rootHandle :: MonadIO m => ActionT m ()
@@ -130,10 +131,12 @@ routes = do
     -- `/baz
     bazHandle :: ( MonadIO m
                  , MonadThrow m
-                 ) => ActionT m ()
-    bazHandle = do
+                 ) => Request -> ActionT m ()
+    bazHandle req = do
       get $ text "baz!"
-      post uploader $ text "uploaded!"
+      post $ do
+        lift $ uploader req
+        text "uploaded!"
       where
         uploader :: (MonadIO m, MonadThrow m) => Request -> m ()
         uploader req =
