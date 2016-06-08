@@ -12,11 +12,8 @@ import Web.Routes.Nested
 import Network.Wai.Trans
 import Network.HTTP.Types
 import           Text.Regex
-import qualified Data.Text.Lazy as LT
 import           Data.Attoparsec.Text hiding (match)
-import Data.Monoid
 import Control.Monad.Catch
-import Control.Monad.IO.Class
 import GHC.Generics
 
 

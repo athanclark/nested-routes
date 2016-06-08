@@ -83,23 +83,15 @@ import           Data.PredSet.Mutable               as HS
 import           Data.Trie.Pred.Mutable             (HashTableTrie (..), RootedHashTableTrie (..), RawValue (..))
 import qualified Data.Trie.Pred.Mutable             as MPT
 import           Data.Trie.Pred.Mutable.Morph       (toMutableRooted)
-import qualified Data.Trie.Pred.Base                as PT -- only using lookups
-import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
-import           Data.Trie.Pred.Base.Step           (PredStep (..), PredSteps (..))
+import           Data.Trie.Pred.Base                (RootedPredTrie (..))
 import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..), CatMaybes)
-import qualified Data.Trie.Class                    as TC
-import           Data.Trie.HashMap                  (HashMapStep (..), HashMapChildren (..))
-import qualified Data.HashMap.Lazy                  as HM
 import           Data.List.NonEmpty                 (NonEmpty (..))
-import qualified Data.List.NonEmpty                 as NE
 import qualified Data.Text                          as T
 import           Data.Hashable
 import           Data.Monoid
-import           Data.Functor.Syntax
 import           Data.Function.Poly
 import Data.Typeable
 
-import           Control.Monad
 import qualified Control.Monad.State                as S
 import           Control.Monad.Catch
 import           Control.Monad.Trans
@@ -173,8 +165,8 @@ matchGroup :: ( Monad m
                 -> HandlerT childContent  childSec  m ()
                 -> HandlerT resultContent resultSec m ()
 matchGroup !ts cs = do
-  (Tries trieContent trieNotFound trieSec) <- lift $ execHandlerT cs
-  tell' $ Tries (extrude ts trieContent)
+  (Tries trieContent' trieNotFound trieSec) <- lift $ execHandlerT cs
+  tell' $ Tries (extrude ts trieContent')
                 (extrude ts trieNotFound)
                 (extrude ts trieSec)
 
@@ -220,8 +212,8 @@ route :: ( Monad m
            -> MiddlewareT m
 route hs app req resp = do
   let path = pathInfo req
-  mMatch <- extractMatch path hs
-  case mMatch of
+  mightMatch <- extractMatch path hs
+  case mightMatch of
     Nothing -> do
       mMatch <- extractMatchAny path hs
       maybe
@@ -359,7 +351,7 @@ trimFileExt !s = fst $! T.breakOn "." s
 --       if null ts
 --       then ([t],) <$> mx
 --       else fmap (\(ts',x) -> (t:ts',x)) $! lookupWithLPT f (NE.fromList ts) =<< mxs
--- 
+--
 --     goPred (PredStep _ predicate mx xs) = do
 --       d <- predicate t
 --       if null ts
@@ -432,7 +424,7 @@ lookupWithLPT predSet f (k:|ks) (HashTableTrie raw preds) = do
 --               pure $! getFirst $
 --                    First (prependAncestry <$> mFoundThere)
 --                 <> First mFoundHere
--- 
+--
 --     goPred (MPT.PredStep predKey mx children) = do
 --       mr' <- HS.lookup predKey k predSet
 --       case mr' of

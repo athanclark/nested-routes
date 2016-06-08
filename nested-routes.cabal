@@ -71,6 +71,7 @@ Test-Suite test
                         Web.Routes.NestedSpec.Basic
                         Web.Routes.Nested
                         Web.Routes.Nested.Types
+                        Web.Routes.Nested.Match
   Build-Depends:        base
                       , nested-routes
                       , attoparsec
@@ -111,6 +112,7 @@ Executable example
   Main-Is:              Main.hs
   Other-Modules:        Web.Routes.Nested
                         Web.Routes.Nested.Types
+                        Web.Routes.Nested.Match
   Build-Depends:        base
                       , nested-routes >= 7
                       , attoparsec

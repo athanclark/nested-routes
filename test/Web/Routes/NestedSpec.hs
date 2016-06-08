@@ -5,7 +5,6 @@
 module Web.Routes.NestedSpec (spec) where
 
 import Web.Routes.NestedSpec.Basic
-import Network.Wai.Trans
 
 import Test.Hspec
 import Test.Hspec.Wai as HW
