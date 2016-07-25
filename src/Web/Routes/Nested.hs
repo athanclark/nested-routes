@@ -41,22 +41,23 @@ nested manner. By "tagging" a set of routes with an authorization role (with @au
 you populate a list of roles breached during any request. The function argument to
 'routeAuth' guards a Request to pass or fail at the high level, while 'auth' lets
 you create your authorization boundaries on a case-by-case basis. Both allow
-you to tap into the monad transformer stack for logging, STM variables, database queries,
+you to tap into the monad transformer stack for logging, STRefs, database queries,
 etc.
 -}
 
 
 module Web.Routes.Nested
-  ( -- * Combinators
+  ( -- * Router Construction
     match
   , matchHere
   , matchAny
   , matchGroup
   , auth
-  , -- * Routing
+  , -- * Routing Middleware
     route
   , routeAuth
-  , extractMatch
+  , -- ** Precise Route Extraction
+    extractMatch
   , extractMatchAny
   , extractAuthSym
   , extractAuth
@@ -64,6 +65,8 @@ module Web.Routes.Nested
   , -- * Metadata
     SecurityToken (..)
   , AuthScope (..)
+  , Match
+  , MatchGroup
   , -- * Re-Exports
     module Web.Routes.Nested.Match
   , module Web.Routes.Nested.Types
@@ -98,6 +101,20 @@ import           Control.Monad.Trans
 import           Control.Monad.ST
 
 
+-- | The constraints necessary for 'match'.
+type Match xs' xs childContent resultContent =
+  ( Singleton (UrlChunks xs) childContent (RootedPredTrie T.Text resultContent)
+  , ArityTypeListIso childContent xs' resultContent
+  )
+
+
+-- | The constraints necessary for 'matchGroup'.
+type MatchGroup xs' xs childContent resultContent childSec resultSec =
+  ( ExtrudeSoundly xs' xs childContent resultContent
+  , ExtrudeSoundly xs' xs childSec     resultSec
+  )
+
+
 -- | Embed a 'Network.Wai.Trans.MiddlewareT' into a set of routes via a matching string. You should
 --   expect the match to create /arity/ in your handler - the @childContent@ variable.
 --   The arity of @childContent@ may grow or shrink, depending on the heterogeneous
@@ -114,14 +131,11 @@ import           Control.Monad.ST
 --   by a predicate with 'matchGroup',
 --   then we would need another level of arity /before/ the @Double@.
 match :: ( Monad m
-         , Singleton (UrlChunks xs)
-             childContent
-             (RootedPredTrie T.Text resultContent)
-         , cleanxs ~ CatMaybes xs
-         , ArityTypeListIso childContent cleanxs resultContent
-         ) => UrlChunks xs
-           -> childContent
-           -> HandlerT resultContent sec m ()
+         , xs' ~ CatMaybes xs
+         , Match xs' xs childContent resultContent
+         ) => UrlChunks xs -- ^ Predicative path to match against
+           -> childContent -- ^ The response to send
+           -> RouterT resultContent sec m ()
 match !ts !vl =
   tell' $ Tries (singleton ts vl)
                 mempty
@@ -132,8 +146,8 @@ match !ts !vl =
 
 -- | Create a handle for the /current/ route - an alias for @\h -> match o_ h@.
 matchHere :: ( Monad m
-             ) => content
-               -> HandlerT content sec m ()
+             ) => content -- ^ The response to send
+               -> RouterT content sec m ()
 matchHere = match origin_
 
 {-# INLINEABLE matchHere #-}
@@ -143,8 +157,8 @@ matchHere = match origin_
 --   use this for a catch-all at some level in their routes, something
 --   like a @not-found 404@ page is useful.
 matchAny :: ( Monad m
-            ) => content
-              -> HandlerT content sec m ()
+            ) => content -- ^ The response to send
+              -> RouterT content sec m ()
 matchAny !vl =
   tell' $ Tries mempty
                 (singleton origin_ vl)
@@ -158,14 +172,13 @@ matchAny !vl =
 --   doing this with a parser or regular expression will necessitate the existing
 --   arity in the handlers before the progam can compile.
 matchGroup :: ( Monad m
-              , cleanxs ~ CatMaybes xs
-              , ExtrudeSoundly cleanxs xs childContent resultContent
-              , ExtrudeSoundly cleanxs xs childSec     resultSec
-              ) => UrlChunks xs
-                -> HandlerT childContent  childSec  m ()
-                -> HandlerT resultContent resultSec m ()
+              , xs' ~ CatMaybes xs
+              , MatchGroup xs' xs childContent resultContent childSec resultSec
+              ) => UrlChunks xs -- ^ Predicative path to match against
+                -> RouterT childContent  childSec  m () -- ^ Child routes to nest
+                -> RouterT resultContent resultSec m ()
 matchGroup !ts cs = do
-  (Tries trieContent' trieNotFound trieSec) <- lift $ execHandlerT cs
+  (Tries trieContent' trieNotFound trieSec) <- lift $ execRouterT cs
   tell' $ Tries (extrude ts trieContent')
                 (extrude ts trieNotFound)
                 (extrude ts trieSec)
@@ -191,9 +204,9 @@ data AuthScope
 -- | Sets the security role and error handler for a set of routes, optionally
 -- including its parent route.
 auth :: ( Monad m
-        ) => sec
+        ) => sec -- ^ Your security token
           -> AuthScope
-          -> HandlerT content (SecurityToken sec) m ()
+          -> RouterT content (SecurityToken sec) m ()
 auth !token !scope =
   tell' $ Tries mempty
                 mempty
@@ -205,10 +218,17 @@ auth !token !scope =
 
 -- * Routing ---------------------------------------
 
+-- | Use this function to run your 'RouterT' into a 'MiddlewareT';
+--   making your router executable in WAI. Note that this only
+--   responds with content, and doesn't protect your routes with
+--   your calls to 'auth'; to protect routes, postcompose this
+--   with 'routeAuth':
+--
+--   > route routes . routeAuth routes
 route :: ( Monad m
          , MonadIO m
          , Typeable m
-         ) => HandlerT (MiddlewareT m) sec m a
+         ) => RouterT (MiddlewareT m) sec m a -- ^ The Router
            -> MiddlewareT m
 route hs app req resp = do
   let path = pathInfo req
@@ -222,13 +242,18 @@ route hs app req resp = do
         mMatch
     Just mid -> mid app req resp
 
+
+-- | Supply a method to decide whether or not to 'Control.Monad.Catch.throwM'
+--   an exception based on the current 'Network.Wai.Middleware.Request' and
+--   the /layers/ of 'auth' tokens passed in your router, turn your router
+--   into a 'Control.Monad.guard' for middlewares, basically.
 routeAuth :: ( Monad m
              , MonadIO m
              , MonadThrow m
              , Typeable sec
              , Typeable m
-             ) => (Request -> [sec] -> m ())
-               -> HandlerT (MiddlewareT m) (SecurityToken sec) m a
+             ) => (Request -> [sec] -> m ()) -- ^ authorization method
+               -> RouterT (MiddlewareT m) (SecurityToken sec) m a -- ^ The Router
                -> MiddlewareT m
 routeAuth authorize hs app req resp = do
   extractAuth authorize req hs
@@ -236,15 +261,15 @@ routeAuth authorize hs app req resp = do
 
 -- * Extraction -------------------------------
 
--- | Extracts only the normal 'match' and 'matchHere'
+-- | Extracts only the normal 'match', 'matchGroup' and 'matchHere' routes.
 extractMatch :: ( Monad m
                 , MonadIO m
                 , Typeable r
-                ) => [T.Text]
-                  -> HandlerT r sec m a
+                ) => [T.Text] -- ^ The path to match against
+                  -> RouterT r sec m a -- ^ The Router
                   -> m (Maybe r)
 extractMatch path !hs = do
-  tries <- execHandlerT hs
+  tries <- execRouterT hs
   liftIO $ stToIO $ do
     trie <- trieContentMutable tries
     mResult <- lookupWithLRPT trimFileExt path trie
@@ -259,14 +284,14 @@ extractMatch path !hs = do
 {-# INLINEABLE extractMatch #-}
 
 
--- | Extracts only the @notFound@ responses
+-- | Extracts only the 'matchAny' responses; something like the greatest-lower-bound.
 extractMatchAny :: ( Monad m
                    , MonadIO m
                    , Typeable r
-                   ) => [T.Text]
-                     -> HandlerT r sec m a
+                   ) => [T.Text] -- ^ The path to match against
+                     -> RouterT r sec m a -- ^ The Router
                      -> m (Maybe r)
-extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execHandlerT x)
+extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execRouterT x)
 
 {-# INLINEABLE extractMatchAny #-}
 
@@ -277,11 +302,11 @@ extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execHandle
 extractAuthSym :: ( Monad m
                   , MonadIO m
                   , Typeable sec
-                  ) => [T.Text]
-                    -> HandlerT x (SecurityToken sec) m a
+                  ) => [T.Text] -- ^ The path to match against
+                    -> RouterT x (SecurityToken sec) m a -- ^ The Router
                     -> m [sec]
 extractAuthSym path hs = do
-  tries <- execHandlerT hs
+  tries <- execRouterT hs
   liftIO . stToIO $ do
     results <- MPT.matchesR path =<< trieSecurityMutable tries
     pure $! foldr go [] results
@@ -291,14 +316,14 @@ extractAuthSym path hs = do
 
 {-# INLINEABLE extractAuthSym #-}
 
--- | Extracts only the security handling logic, and turns it into a guard
+-- | Extracts only the security handling logic, and turns it into a guard.
 extractAuth :: ( Monad m
                , MonadIO m
                , MonadThrow m
                , Typeable sec
-               ) => (Request -> [sec] -> m ()) -- authorization method
+               ) => (Request -> [sec] -> m ()) -- ^ authorization method
                  -> Request
-                 -> HandlerT x (SecurityToken sec) m a
+                 -> RouterT x (SecurityToken sec) m a
                  -> m ()
 extractAuth authorize req hs = do
   ss <- extractAuthSym (pathInfo req) hs
@@ -308,13 +333,14 @@ extractAuth authorize req hs = do
 
 
 -- | Given a way to draw out a special-purpose trie from our route set, route
---   to the responses based on a /furthest-reached/ method.
+--   to the responses based on a /furthest-route-reached/ method, or like a
+--   greatest-lower-bound.
 extractNearestVia :: ( MonadIO m
                      , Monad m
                      , Typeable r
-                     ) => [T.Text]
-                       -> (HandlerT r sec m a -> m (RootedPredTrie T.Text r))
-                       -> HandlerT r sec m a
+                     ) => [T.Text] -- ^ The path to match against
+                       -> (RouterT r sec m a -> m (RootedPredTrie T.Text r))
+                       -> RouterT r sec m a
                        -> m (Maybe r)
 extractNearestVia path extr hs = do
   trie <- extr hs
