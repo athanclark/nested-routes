@@ -119,7 +119,7 @@ type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
 --   is satisfiable (i.e. @Accept@ headers are O.K., etc.)
 action :: Monad m => ActionT m () -> MiddlewareT m
 action xs app req respond = do
-  vmap <- execVerbListenerT (mapVerbs fileExtsToMiddleware xs)
+  vmap <- fmap fileExtsToMiddleware <$> execVerbListenerT xs
   case lookupVerb (getVerb req) vmap of
     Nothing  -> app req respond
     Just mid -> mid app req respond
