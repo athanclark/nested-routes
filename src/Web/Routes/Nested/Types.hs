@@ -19,9 +19,6 @@ Portability : GHC
 module Web.Routes.Nested.Types
   ( -- * Internal Structure
     Tries (..)
-  , trieContentMutable
-  , trieCatchAllMutable
-  , trieSecurityMutable
   , -- * Builder
     RouterT (..)
   , execRouterT
@@ -35,18 +32,14 @@ import           Web.Routes.Nested.Match
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType
 import           Network.Wai.Trans
-import           Data.Trie.Pred.Mutable
-import           Data.Trie.Pred.Mutable.Morph
 import           Data.Trie.Pred.Base                (RootedPredTrie (..))
 import           Data.Trie.Pred.Interface.Types     (Extrude (..), CatMaybes)
 
-import           Data.Typeable
 import           Data.Monoid
 import qualified Data.Text as T
 import           Data.Function.Poly
 import           Control.Monad.Trans
 import qualified Control.Monad.State                as S
-import           Control.Monad.ST
 
 
 
@@ -57,24 +50,6 @@ data Tries x s = Tries
   , trieSecurity :: !(RootedPredTrie T.Text s)
   }
 
-
-trieContentMutable :: ( Typeable x
-                      , Typeable s
-                      ) => Tries x s'
-                        -> ST s (RootedHashTableTrie s T.Text x)
-trieContentMutable (Tries x _ _) = toMutableRooted x
-
-trieCatchAllMutable :: ( Typeable x
-                       , Typeable s
-                       ) => Tries x s'
-                         -> ST s (RootedHashTableTrie s T.Text x)
-trieCatchAllMutable (Tries _ x _) = toMutableRooted x
-
-trieSecurityMutable :: ( Typeable s'
-                       , Typeable s
-                       ) => Tries x s'
-                         -> ST s (RootedHashTableTrie s T.Text s')
-trieSecurityMutable (Tries _ _ x) = toMutableRooted x
 
 instance Monoid (Tries x s) where
   mempty = Tries mempty mempty mempty

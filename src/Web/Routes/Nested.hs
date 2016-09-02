@@ -10,6 +10,7 @@
   , FlexibleContexts
   , OverloadedStrings
   , ScopedTypeVariables
+  , NamedFieldPuns
   #-}
 
 {- |
@@ -81,16 +82,15 @@ import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
 
 import Data.Foldable (foldlM)
-import qualified Data.HashTable.ST.Basic            as HT
-import           Data.PredSet.Mutable               as HS
-import           Data.Trie.Pred.Mutable             (HashTableTrie (..), RootedHashTableTrie (..), RawValue (..))
-import qualified Data.Trie.Pred.Mutable             as MPT
-import           Data.Trie.Pred.Mutable.Morph       (toMutableRooted)
-import           Data.Trie.Pred.Base                (RootedPredTrie (..))
+import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
+import           Data.Trie.Pred.Base.Step           (PredStep (..), PredSteps (..))
+import qualified Data.Trie.Pred.Interface           as Interface
 import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..), CatMaybes)
-import           Data.List.NonEmpty                 (NonEmpty (..))
+import           Data.Trie.HashMap                  (HashMapTrie (..), HashMapStep (..), HashMapChildren (..))
+import           Data.List.NonEmpty                 (NonEmpty (..), fromList)
 import qualified Data.Text                          as T
 import           Data.Hashable
+import qualified Data.HashMap.Strict as HM
 import           Data.Monoid
 import           Data.Function.Poly
 import Data.Typeable
@@ -269,17 +269,15 @@ extractMatch :: ( Monad m
                   -> RouterT r sec m a -- ^ The Router
                   -> m (Maybe r)
 extractMatch path !hs = do
-  tries <- execRouterT hs
-  liftIO $ stToIO $ do
-    trie <- trieContentMutable tries
-    mResult <- lookupWithLRPT trimFileExt path trie
-    case mResult of
-      Nothing ->
-        if not (null path)
-           && trimFileExt (last path) == "index"
-        then MPT.lookupR (init path) trie
-        else pure Nothing
-      Just r -> return (Just r)
+  Tries{trieContent} <- execRouterT hs
+  let mResult = lookupWithLRPT trimFileExt path trieContent
+  case mResult of
+    Nothing ->
+      if not (null path)
+         && trimFileExt (last path) == "index"
+      then pure $ Interface.lookup (init path) trieContent
+      else pure Nothing
+    Just (_,r) -> pure (Just r)
 
 {-# INLINEABLE extractMatch #-}
 
@@ -306,9 +304,9 @@ extractAuthSym :: ( Monad m
                     -> RouterT x (SecurityToken sec) m a -- ^ The Router
                     -> m [sec]
 extractAuthSym path hs = do
-  tries <- execRouterT hs
+  Tries{trieSecurity} <- execRouterT hs
   liftIO . stToIO $ do
-    results <- MPT.matchesR path =<< trieSecurityMutable tries
+    let results = Interface.matches path trieSecurity
     pure $! foldr go [] results
   where
     go (_,SecurityToken _ DontProtectHere,[]) ys = ys
@@ -345,7 +343,7 @@ extractNearestVia :: ( MonadIO m
 extractNearestVia path extr hs = do
   trie <- extr hs
   liftIO . stToIO $ do
-    mResult <- MPT.matchR path =<< toMutableRooted trie
+    let mResult = Interface.match path trie
     pure (mid <$> mResult)
   where
     mid (_,r,_) = r
@@ -365,56 +363,56 @@ trimFileExt !s = fst $! T.breakOn "." s
 
 -- | A quirky function for processing the last element of a lookup path, only
 -- on /literal/ matches.
--- lookupWithLPT :: ( Hashable s
---                 , Eq s
---                 ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
--- lookupWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
---   | null ts   = getFirst $ First ((goLit $! f t) ls) <> foldMap (First . goPred) ps
---   | otherwise = getFirst $ First (goLit       t  ls) <> foldMap (First . goPred) ps
---   where
---     goLit t' xs = do
---       (HashMapChildren mx mxs) <- HM.lookup t' xs
---       if null ts
---       then ([t],) <$> mx
---       else fmap (\(ts',x) -> (t:ts',x)) $! lookupWithLPT f (NE.fromList ts) =<< mxs
---
---     goPred (PredStep _ predicate mx xs) = do
---       d <- predicate t
---       if null ts
---       then ([t],) <$> (mx <$~> d)
---       else fmap (\(ts',x) -> (t:ts',x d)) $! lookupWithLPT f (NE.fromList ts) xs
+lookupWithLPT :: ( Hashable s
+                , Eq s
+                ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
+lookupWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
+  | null ts   = getFirst $ First ((goLit $! f t) ls) <> foldMap (First . goPred) ps
+  | otherwise = getFirst $ First (goLit       t  ls) <> foldMap (First . goPred) ps
+  where
+    goLit t' xs = do
+      (HashMapChildren mx mxs) <- HM.lookup t' xs
+      if null ts
+      then ([t],) <$> mx
+      else fmap (\(ts',x) -> (t:ts',x)) $! lookupWithLPT f (fromList ts) =<< mxs
 
-lookupWithLPT :: ( Eq k
-                 , Hashable k
-                 , Typeable s
-                 , Typeable k
-                 ) => PredSet s k
-                   -> (k -> k)
-                   -> NonEmpty k
-                   -> HashTableTrie s k a
-                   -> ST s (Maybe a)
-lookupWithLPT predSet f (k:|ks) (HashTableTrie raw preds) = do
-  mx <- HT.lookup raw $ if null ks then f k else k
-  case mx of
-    Just (RawValue mx' children) ->
-      case ks of
-        []       -> pure mx'
-        (k':ks') -> lookupWithLPT predSet f (k':|ks') children
-    Nothing ->
-      let -- go :: Typeable t => Maybe t -> PredStep s k t -> ST s (Maybe t)
-          go solution@(Just _) _                          = pure solution
-          go Nothing (MPT.PredStep predKey mHandler children) = do
-            mx' <- HS.lookup predKey k predSet
-            case mx' of
-              Nothing -> pure Nothing
-              Just x  ->
-                case ks of
-                  [] ->
-                    pure $! ($ x) <$> mHandler
-                  (k':ks') -> do
-                    mf <- lookupWithLPT predSet f (k':|ks') children
-                    pure $! ($ x) <$> mf
-      in  foldlM go Nothing preds
+    goPred (PredStep _ predicate mx xs) = do
+      d <- predicate t
+      if null ts
+      then ([t],) <$> (($ d) <$> mx)
+      else fmap (\(ts',x) -> (t:ts',x d)) $! lookupWithLPT f (fromList ts) xs
+
+-- lookupWithLPT :: ( Eq k
+--                  , Hashable k
+--                  , Typeable s
+--                  , Typeable k
+--                  ) => PredSet s k
+--                    -> (k -> k)
+--                    -> NonEmpty k
+--                    -> PredTrie k a
+--                    -> ST s (Maybe a)
+-- lookupWithLPT predSet f (k:|ks) (HashTableTrie raw preds) = do
+--   mx <- HT.lookup raw $ if null ks then f k else k
+--   case mx of
+--     Just (RawValue mx' children) ->
+--       case ks of
+--         []       -> pure mx'
+--         (k':ks') -> lookupWithLPT predSet f (k':|ks') children
+--     Nothing ->
+--       let -- go :: Typeable t => Maybe t -> PredStep s k t -> ST s (Maybe t)
+--           go solution@(Just _) _                          = pure solution
+--           go Nothing (MPT.PredStep predKey mHandler children) = do
+--             mx' <- HS.lookup predKey k predSet
+--             case mx' of
+--               Nothing -> pure Nothing
+--               Just x  ->
+--                 case ks of
+--                   [] ->
+--                     pure $! ($ x) <$> mHandler
+--                   (k':ks') -> do
+--                     mf <- lookupWithLPT predSet f (k':|ks') children
+--                     pure $! ($ x) <$> mf
+--       in  foldlM go Nothing preds
 
 -- lookupWithLPT :: ( Eq k
 --                 , Hashable k
@@ -472,11 +470,11 @@ lookupWithLPT predSet f (k:|ks) (HashTableTrie raw preds) = do
 {-# INLINEABLE lookupWithLPT #-}
 
 
---lookupWithLRPT :: ( Hashable s
---                 , Eq s
---                 ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
---lookupWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
---lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (NE.fromList ts) xs
+lookupWithLRPT :: ( Hashable s
+                 , Eq s
+                 ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
+lookupWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
+lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (fromList ts) xs
 
 -- lookupWithLRPT :: ( Eq k
 --                  , Hashable k
@@ -495,18 +493,18 @@ lookupWithLPT predSet f (k:|ks) (HashTableTrie raw preds) = do
 --       First ((\(pre,x,suff) -> (NE.toList pre,x,suff)) <$> mFoundThere)
 --    <> First ((\x -> ([],x,k:ks)) <$> mx)
 
-lookupWithLRPT :: ( Eq k
-                  , Hashable k
-                  , Typeable s
-                  , Typeable k
-                  , Typeable a
-                  ) => (k -> k)
-                    -> [k]
-                    -> RootedHashTableTrie s k a
-                    -> ST s (Maybe a)
-lookupWithLRPT _ [] (RootedHashTableTrie mx _ _) = pure mx
-lookupWithLRPT f (k:ks) (RootedHashTableTrie _ xs predSet) =
-  lookupWithLPT predSet f (k:|ks) xs
+-- lookupWithLRPT :: ( Eq k
+--                   , Hashable k
+--                   , Typeable s
+--                   , Typeable k
+--                   , Typeable a
+--                   ) => (k -> k)
+--                     -> [k]
+--                     -> RootedHashTableTrie s k a
+--                     -> ST s (Maybe a)
+-- lookupWithLRPT _ [] (RootedHashTableTrie mx _ _) = pure mx
+-- lookupWithLRPT f (k:ks) (RootedHashTableTrie _ xs predSet) =
+--   lookupWithLPT predSet f (k:|ks) xs
 
 
 
