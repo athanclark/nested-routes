@@ -227,7 +227,6 @@ auth !token !scope =
 --   > route routes . routeAuth routes
 route :: ( Monad m
          , MonadIO m
-         , Typeable m
          ) => RouterT (MiddlewareT m) sec m a -- ^ The Router
            -> MiddlewareT m
 route hs app req resp = do
@@ -250,8 +249,6 @@ route hs app req resp = do
 routeAuth :: ( Monad m
              , MonadIO m
              , MonadThrow m
-             , Typeable sec
-             , Typeable m
              ) => (Request -> [sec] -> m ()) -- ^ authorization method
                -> RouterT (MiddlewareT m) (SecurityToken sec) m a -- ^ The Router
                -> MiddlewareT m
@@ -264,7 +261,6 @@ routeAuth authorize hs app req resp = do
 -- | Extracts only the normal 'match', 'matchGroup' and 'matchHere' routes.
 extractMatch :: ( Monad m
                 , MonadIO m
-                , Typeable r
                 ) => [T.Text] -- ^ The path to match against
                   -> RouterT r sec m a -- ^ The Router
                   -> m (Maybe r)
@@ -285,7 +281,6 @@ extractMatch path !hs = do
 -- | Extracts only the 'matchAny' responses; something like the greatest-lower-bound.
 extractMatchAny :: ( Monad m
                    , MonadIO m
-                   , Typeable r
                    ) => [T.Text] -- ^ The path to match against
                      -> RouterT r sec m a -- ^ The Router
                      -> m (Maybe r)
@@ -299,7 +294,6 @@ extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execRouter
 --   a request for a set of routes.
 extractAuthSym :: ( Monad m
                   , MonadIO m
-                  , Typeable sec
                   ) => [T.Text] -- ^ The path to match against
                     -> RouterT x (SecurityToken sec) m a -- ^ The Router
                     -> m [sec]
@@ -318,7 +312,6 @@ extractAuthSym path hs = do
 extractAuth :: ( Monad m
                , MonadIO m
                , MonadThrow m
-               , Typeable sec
                ) => (Request -> [sec] -> m ()) -- ^ authorization method
                  -> Request
                  -> RouterT x (SecurityToken sec) m a
@@ -335,7 +328,6 @@ extractAuth authorize req hs = do
 --   greatest-lower-bound.
 extractNearestVia :: ( MonadIO m
                      , Monad m
-                     , Typeable r
                      ) => [T.Text] -- ^ The path to match against
                        -> (RouterT r sec m a -> m (RootedPredTrie T.Text r))
                        -> RouterT r sec m a
