@@ -334,9 +334,7 @@ extractNearestVia :: ( MonadIO m
                        -> m (Maybe r)
 extractNearestVia path extr hs = do
   trie <- extr hs
-  liftIO . stToIO $ do
-    let mResult = Interface.match path trie
-    pure (mid <$> mResult)
+  pure (mid <$> Interface.match path trie)
   where
     mid (_,r,_) = r
 
@@ -348,7 +346,12 @@ extractNearestVia path extr hs = do
 
 -- | Removes @.txt@ from @foo.txt@
 trimFileExt :: T.Text -> T.Text
-trimFileExt !s = fst $! T.breakOn "." s
+trimFileExt !s =
+  case T.breakOnEnd "." s of
+    (f,e) | f /= ""
+          && e /= ""
+          && T.length f > 0 -> T.dropEnd 1 f
+    _ -> s
 
 {-# INLINEABLE trimFileExt #-}
 
