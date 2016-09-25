@@ -81,23 +81,23 @@ import           Network.Wai.Trans
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
 
-import Data.Foldable (foldlM)
 import           Data.Trie.Pred.Base                (RootedPredTrie (..), PredTrie (..))
 import           Data.Trie.Pred.Base.Step           (PredStep (..), PredSteps (..))
 import qualified Data.Trie.Pred.Interface           as Interface
 import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..), CatMaybes)
-import           Data.Trie.HashMap                  (HashMapTrie (..), HashMapStep (..), HashMapChildren (..))
+import           Data.Trie.HashMap                  (HashMapStep (..), HashMapChildren (..))
 import           Data.List.NonEmpty                 (NonEmpty (..), fromList)
 import qualified Data.Text                          as T
 import           Data.Hashable
 import qualified Data.HashMap.Strict as HM
 import           Data.Monoid
 import           Data.Function.Poly
-import Data.Typeable
+import           Data.Bifunctor (bimap)
 
 import qualified Control.Monad.State                as S
 import           Control.Monad.Catch
 import           Control.Monad.Trans
+import           Control.Arrow
 import           Control.Monad.ST
 
 
@@ -356,23 +356,38 @@ trimFileExt !s = fst $! T.breakOn "." s
 -- | A quirky function for processing the last element of a lookup path, only
 -- on /literal/ matches.
 lookupWithLPT :: ( Hashable s
-                , Eq s
-                ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
-lookupWithLPT f (t:|ts) (PredTrie (HashMapStep ls) (PredSteps ps))
-  | null ts   = getFirst $ First ((goLit $! f t) ls) <> foldMap (First . goPred) ps
-  | otherwise = getFirst $ First (goLit       t  ls) <> foldMap (First . goPred) ps
-  where
-    goLit t' xs = do
-      (HashMapChildren mx mxs) <- HM.lookup t' xs
-      if null ts
-      then ([t],) <$> mx
-      else fmap (\(ts',x) -> (t:ts',x)) $! lookupWithLPT f (fromList ts) =<< mxs
+                 , Eq s
+                 ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
+lookupWithLPT f tss (PredTrie (HashMapStep ls) (PredSteps ps)) =
+  getFirst $ First (goLit f tss ls)
+          <> foldMap (First . goPred f tss) ps
 
-    goPred (PredStep _ predicate mx xs) = do
-      d <- predicate t
-      if null ts
-      then ([t],) <$> (($ d) <$> mx)
-      else fmap (\(ts',x) -> (t:ts',x d)) $! lookupWithLPT f (fromList ts) xs
+goLit :: ( Hashable s
+         , Eq s
+         ) => (s -> s)
+           -> NonEmpty s
+           -> HM.HashMap s (HashMapChildren PredTrie s a)
+           -> Maybe ([s], a)
+goLit f (t:|ts) xs = do
+  (HashMapChildren mx mxs) <- getFirst $ First (HM.lookup t xs)
+                                      <> First (  if null ts
+                                                  then HM.lookup (f t) xs
+                                                  else Nothing)
+  if null ts
+  then ([f t],) <$> mx
+  else first (t:) <$> (lookupWithLPT f (fromList ts) =<< mxs)
+
+goPred :: ( Hashable s
+          , Eq s
+          ) => (s -> s)
+            -> NonEmpty s
+            -> PredStep s PredTrie s a
+            -> Maybe ([s], a)
+goPred f (t:|ts) (PredStep _ predicate mx xs) = do
+  d <- predicate t
+  if null ts
+  then (([t],) . ($ d)) <$> mx
+  else bimap (t:) ($ d) <$> lookupWithLPT f (fromList ts) xs
 
 -- lookupWithLPT :: ( Eq k
 --                  , Hashable k

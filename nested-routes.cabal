@@ -38,8 +38,8 @@ Library
                         Web.Routes.Nested.Types
   Build-Depends:        base >= 4.8 && < 5
                       , attoparsec
+                      , bifunctors
                       , bytestring
-                      , composition-extra >= 2.0.0
                       , errors
                       , exceptions
                       , hashable
