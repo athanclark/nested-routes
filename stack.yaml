@@ -1,18 +1,17 @@
 flags: {}
 packages:
 - '.'
-- '../wai-middleware-verbs'
 extra-deps:
   - composition-extra-2.0.0
-  - tries-0.0.4
+  - tries-0.0.4.1
   - rose-trees-0.0.3
   - wai-util-0.8
   - http-accept-0.2
-  - poly-arity-0.0.7
+  - poly-arity-0.1.0
   - wai-transformers-0.0.7
   - wai-middleware-verbs-0.3.2
   - wai-middleware-content-type-0.5.0.1
-  - pred-trie-0.5.1
+  - pred-trie-0.5.1.1
   - pred-set-0.0.1
   - HSet-0.0.0
-resolver: nightly-2016-05-20
+resolver: lts-8.5
