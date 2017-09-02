@@ -42,8 +42,10 @@ Library
                       , bytestring
                       , errors
                       , exceptions
+                      , extractable-singleton
                       , hashable
                       , hashtables
+                      , monad-control-aligned
                       , mtl
                       , poly-arity >= 0.0.7
                       , pred-set >= 0.0.1

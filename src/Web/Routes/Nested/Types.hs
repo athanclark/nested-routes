@@ -38,8 +38,10 @@ import           Data.Trie.Pred.Interface.Types     (Extrude (..), CatMaybes)
 import           Data.Monoid
 import qualified Data.Text as T
 import           Data.Function.Poly
+import           Data.Singleton.Class (Extractable)
 import           Control.Monad.Trans
 import qualified Control.Monad.State                as S
+import           Control.Monad.Trans.Control.Aligned (MonadBaseControl)
 
 
 
@@ -92,7 +94,10 @@ type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
 
 -- | Run the content builder into a middleware that responds when the content
 --   is satisfiable (i.e. @Accept@ headers are O.K., etc.)
-action :: Monad m => ActionT m () -> MiddlewareT m
+action :: Monad m
+       => MonadBaseControl IO m stM
+       => Extractable stM
+       => ActionT m () -> MiddlewareT m
 action xs app req respond = do
   vmap <- fmap fileExtsToMiddleware <$> execVerbListenerT xs
   case lookupVerb (getVerb req) vmap of

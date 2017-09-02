@@ -10,8 +10,10 @@ extra-deps:
   - poly-arity-0.1.0
   - wai-transformers-0.0.7
   - wai-middleware-verbs-0.3.2
-  - wai-middleware-content-type-0.5.0.1
+  - wai-middleware-content-type-0.5.1
   - pred-trie-0.5.1.1
   - pred-set-0.0.1
   - HSet-0.0.0
+  - extractable-singleton-0.0.1
+  - monad-control-aligned-0.0.1
 resolver: lts-8.5
