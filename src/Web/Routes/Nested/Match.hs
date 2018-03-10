@@ -35,13 +35,13 @@ module Web.Routes.Nested.Match
   , UrlChunks
   ) where
 
-import Prelude hiding (pred)
-import Data.Attoparsec.Text
-import Text.Regex
-import qualified Data.Text as T
-import Control.Monad
-import Control.Error (hush)
-import Data.Trie.Pred
+import Prelude              hiding (pred)
+import Data.Attoparsec.Text (Parser, parseOnly)
+import Text.Regex           (Regex, matchRegex)
+import qualified Data.Text  as T
+import Control.Monad        (guard)
+import Control.Error        (hush)
+import Data.Trie.Pred       (PathChunk, PathChunks, pred, nil, only, (./))
 
 
 o_, origin_ :: UrlChunks '[]

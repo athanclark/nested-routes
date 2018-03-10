@@ -28,19 +28,20 @@ module Web.Routes.Nested.Types
     ExtrudeSoundly
   ) where
 
-import           Web.Routes.Nested.Match
-import           Network.Wai.Middleware.Verbs
-import           Network.Wai.Middleware.ContentType
-import           Network.Wai.Trans
-import           Data.Trie.Pred.Base                (RootedPredTrie (..))
-import           Data.Trie.Pred.Interface.Types     (Extrude (..), CatMaybes)
+import           Web.Routes.Nested.Match             (UrlChunks)
+import           Network.Wai.Middleware.Verbs        (VerbListenerT, execVerbListenerT, lookupVerb, getVerb)
+import           Network.Wai.Middleware.ContentType  (FileExtListenerT, fileExtsToMiddleware)
+import           Network.Wai.Trans                   (MiddlewareT)
+import           Data.Trie.Pred.Base                 (RootedPredTrie (..))
+import           Data.Trie.Pred.Interface.Types      (Extrude (..), CatMaybes)
 
-import           Data.Monoid
-import qualified Data.Text as T
-import           Data.Function.Poly
-import           Data.Singleton.Class (Extractable)
-import           Control.Monad.Trans
-import qualified Control.Monad.State                as S
+import           Data.Monoid                         ((<>))
+import qualified Data.Text                           as T
+import           Data.Function.Poly                  (ArityTypeListIso)
+import           Data.Singleton.Class                (Extractable)
+import           Control.Monad.Trans                 (MonadTrans)
+import           Control.Monad.IO.Class              (MonadIO)
+import qualified Control.Monad.State                 as S
 import           Control.Monad.Trans.Control.Aligned (MonadBaseControl)
 
 

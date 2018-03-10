@@ -69,15 +69,17 @@ module Web.Routes.Nested
   , Match
   , MatchGroup
   , -- * Re-Exports
-    module Web.Routes.Nested.Match
-  , module Web.Routes.Nested.Types
+    module Match
+  , module Types
   , module Network.Wai.Middleware.Verbs
   , module Network.Wai.Middleware.ContentType
   ) where
 
-import           Web.Routes.Nested.Match
-import           Web.Routes.Nested.Types
-import           Network.Wai.Trans
+import           Web.Routes.Nested.Match            (UrlChunks, origin_)
+import qualified Web.Routes.Nested.Match            as Match
+import           Web.Routes.Nested.Types            (RouterT, execRouterT, Tries (..), ExtrudeSoundly)
+import qualified Web.Routes.Nested.Types            as Types
+import           Network.Wai.Trans                  (MiddlewareT, Request, pathInfo)
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
 
@@ -88,22 +90,24 @@ import           Data.Trie.Pred.Interface.Types     (Singleton (..), Extrude (..
 import           Data.Trie.HashMap                  (HashMapStep (..), HashMapChildren (..))
 import           Data.List.NonEmpty                 (NonEmpty (..), fromList)
 import qualified Data.Text                          as T
-import           Data.Hashable
-import qualified Data.HashMap.Strict as HM
-import           Data.Monoid
-import           Data.Function.Poly
-import           Data.Bifunctor (bimap)
+import           Data.Hashable                      (Hashable)
+import qualified Data.HashMap.Strict                as HM
+import           Data.Monoid                        ((<>), First (..))
+import           Data.Function.Poly                 (ArityTypeListIso)
+import           Data.Bifunctor                     (bimap)
 
 import qualified Control.Monad.State                as S
-import           Control.Monad.Catch
-import           Control.Monad.Trans
-import           Control.Arrow
-import           Control.Monad.ST
+import           Control.Monad.Catch                (MonadThrow)
+import           Control.Monad.Trans                (MonadTrans (..))
+import           Control.Monad.IO.Class             (MonadIO (..))
+import           Control.Arrow                      (first)
+import           Control.Monad.ST                   (stToIO)
 
 
 -- | The constraints necessary for 'match'.
 type Match xs' xs childContent resultContent =
-  ( Singleton (UrlChunks xs) childContent (RootedPredTrie T.Text resultContent)
+  ( xs' ~ CatMaybes xs
+  , Singleton (UrlChunks xs) childContent (RootedPredTrie T.Text resultContent)
   , ArityTypeListIso childContent xs' resultContent
   )
 
@@ -131,7 +135,6 @@ type MatchGroup xs' xs childContent resultContent childSec resultSec =
 --   by a predicate with 'matchGroup',
 --   then we would need another level of arity /before/ the @Double@.
 match :: ( Monad m
-         , xs' ~ CatMaybes xs
          , Match xs' xs childContent resultContent
          ) => UrlChunks xs -- ^ Predicative path to match against
            -> childContent -- ^ The response to send
@@ -172,7 +175,6 @@ matchAny !vl =
 --   doing this with a parser or regular expression will necessitate the existing
 --   arity in the handlers before the progam can compile.
 matchGroup :: ( Monad m
-              , xs' ~ CatMaybes xs
               , MatchGroup xs' xs childContent resultContent childSec resultSec
               ) => UrlChunks xs -- ^ Predicative path to match against
                 -> RouterT childContent  childSec  m () -- ^ Child routes to nest
