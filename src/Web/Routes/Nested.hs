@@ -69,16 +69,16 @@ module Web.Routes.Nested
   , Match
   , MatchGroup
   , -- * Re-Exports
-    module Match
-  , module Types
+    module Web.Routes.Nested.Match
+  , module Web.Routes.Nested.Types
   , module Network.Wai.Middleware.Verbs
   , module Network.Wai.Middleware.ContentType
   ) where
 
 import           Web.Routes.Nested.Match            (UrlChunks, origin_)
-import qualified Web.Routes.Nested.Match            as Match
+import           Web.Routes.Nested.Match
 import           Web.Routes.Nested.Types            (RouterT, execRouterT, Tries (..), ExtrudeSoundly)
-import qualified Web.Routes.Nested.Types            as Types
+import           Web.Routes.Nested.Types
 import           Network.Wai.Trans                  (MiddlewareT, Request, pathInfo)
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
@@ -227,8 +227,7 @@ auth !token !scope =
 --   with 'routeAuth':
 --
 --   > route routes . routeAuth routes
-route :: ( Monad m
-         , MonadIO m
+route :: ( MonadIO m
          ) => RouterT (MiddlewareT m) sec m a -- ^ The Router
            -> MiddlewareT m
 route hs app req resp = do
@@ -248,8 +247,7 @@ route hs app req resp = do
 --   an exception based on the current 'Network.Wai.Middleware.Request' and
 --   the /layers/ of 'auth' tokens passed in your router, turn your router
 --   into a 'Control.Monad.guard' for middlewares, basically.
-routeAuth :: ( Monad m
-             , MonadIO m
+routeAuth :: ( MonadIO m
              , MonadThrow m
              ) => (Request -> [sec] -> m ()) -- ^ authorization method
                -> RouterT (MiddlewareT m) (SecurityToken sec) m a -- ^ The Router
@@ -261,8 +259,7 @@ routeAuth authorize hs app req resp = do
 -- * Extraction -------------------------------
 
 -- | Extracts only the normal 'match', 'matchGroup' and 'matchHere' routes.
-extractMatch :: ( Monad m
-                , MonadIO m
+extractMatch :: ( MonadIO m
                 ) => [T.Text] -- ^ The path to match against
                   -> RouterT r sec m a -- ^ The Router
                   -> m (Maybe r)
@@ -281,8 +278,7 @@ extractMatch path !hs = do
 
 
 -- | Extracts only the 'matchAny' responses; something like the greatest-lower-bound.
-extractMatchAny :: ( Monad m
-                   , MonadIO m
+extractMatchAny :: ( MonadIO m
                    ) => [T.Text] -- ^ The path to match against
                      -> RouterT r sec m a -- ^ The Router
                      -> m (Maybe r)
@@ -294,8 +290,7 @@ extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execRouter
 
 -- | Find the security tokens / authorization roles affiliated with
 --   a request for a set of routes.
-extractAuthSym :: ( Monad m
-                  , MonadIO m
+extractAuthSym :: ( MonadIO m
                   ) => [T.Text] -- ^ The path to match against
                     -> RouterT x (SecurityToken sec) m a -- ^ The Router
                     -> m [sec]
@@ -311,8 +306,7 @@ extractAuthSym path hs = do
 {-# INLINEABLE extractAuthSym #-}
 
 -- | Extracts only the security handling logic, and turns it into a guard.
-extractAuth :: ( Monad m
-               , MonadIO m
+extractAuth :: ( MonadIO m
                , MonadThrow m
                ) => (Request -> [sec] -> m ()) -- ^ authorization method
                  -> Request
@@ -329,7 +323,6 @@ extractAuth authorize req hs = do
 --   to the responses based on a /furthest-route-reached/ method, or like a
 --   greatest-lower-bound.
 extractNearestVia :: ( MonadIO m
-                     , Monad m
                      ) => [T.Text] -- ^ The path to match against
                        -> (RouterT r sec m a -> m (RootedPredTrie T.Text r))
                        -> RouterT r sec m a

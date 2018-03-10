@@ -8,13 +8,13 @@
 
 module Web.Routes.NestedSpec.Basic where
 
-import Web.Routes.Nested
-import Network.Wai.Trans
-import Network.HTTP.Types
-import           Text.Regex
-import           Data.Attoparsec.Text hiding (match)
-import Control.Monad.Catch
-import GHC.Generics
+import Web.Routes.Nested (o_, p_, l_, r_, (</>), match, matchHere, matchGroup, auth, AuthScope (..), textOnly, routeAuth)
+import Network.Wai.Trans (Middleware, Application, Request, catchMiddlewareT)
+import Network.HTTP.Types (status401, status404, status200)
+import Text.Regex (mkRegex)
+import Data.Attoparsec.Text (double)
+import Control.Monad.Catch (Exception, MonadThrow (throwM))
+import GHC.Generics (Generic)
 
 
 data AuthRole = AuthRole deriving (Show, Eq)

@@ -95,8 +95,7 @@ type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
 
 -- | Run the content builder into a middleware that responds when the content
 --   is satisfiable (i.e. @Accept@ headers are O.K., etc.)
-action :: Monad m
-       => MonadBaseControl IO m stM
+action :: MonadBaseControl IO m stM
        => Extractable stM
        => ActionT m () -> MiddlewareT m
 action xs app req respond = do

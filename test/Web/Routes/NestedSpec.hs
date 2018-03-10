@@ -4,10 +4,10 @@
 
 module Web.Routes.NestedSpec (spec) where
 
-import Web.Routes.NestedSpec.Basic
+import Web.Routes.NestedSpec.Basic (app)
 
-import Test.Hspec
-import Test.Hspec.Wai as HW
+import Test.Hspec (Spec, describe, it)
+import Test.Hspec.Wai (get, shouldRespondWith, with)
 
 
 

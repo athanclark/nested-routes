@@ -1,9 +1,8 @@
 module Main where
 
-import Test.Hspec (hspec)
 import Spec (spec)
-import Test.Tasty
-import Test.Tasty.Hspec
+import Test.Tasty (defaultMain)
+import Test.Tasty.Hspec (testSpec)
 
 
 main :: IO ()
