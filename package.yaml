@@ -1,5 +1,5 @@
 name: nested-routes
-version: 8.0.2
+version: 8.1.0
 synopsis: Declarative, compositional Wai responses
 description:
   This library attempts to make it easier to write nice Wai response handlers

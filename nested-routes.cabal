@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3cba23da53b9eb7a5d98a85f0bdb6467464282f0dfcd97e2e82f38e36ffd4b6b
+-- hash: d5b889e06120570dab096e91ef8f5126ec32f55d8ac4d7ab46a1eeb7024e3767
 
 name:           nested-routes
-version:        8.0.2
+version:        8.1.0
 synopsis:       Declarative, compositional Wai responses
 description:    This library attempts to make it easier to write nice Wai response handlers by giving us a Sinatra/ <https://hackage.haskell.org/package/scotty Scotty>-like syntax for declaring HTTP-verb oriented routes, in addition to file-extension handling and rose-tree like composition. Not only do we have literal route specification, like <https://hackage.haskell.org/package/scotty Scotty> & <https://hackage.haskell.org/package/spock Spock>, but we can also embed <https://hackage.haskell.org/package/attoparsec Attoparsec> parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions> /directly/ in our routes, with our handlers reflecting their results.
 category:       Web

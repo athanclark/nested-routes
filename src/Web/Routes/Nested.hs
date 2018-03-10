@@ -135,9 +135,9 @@ type MatchGroup xs' xs childContent resultContent childSec resultSec =
 --   by a predicate with 'matchGroup',
 --   then we would need another level of arity /before/ the @Double@.
 match :: ( Monad m
-         , Match xs' xs childContent resultContent
+         , Match xs' xs (MiddlewareT m) resultContent
          ) => UrlChunks xs -- ^ Predicative path to match against
-           -> childContent -- ^ The response to send
+           -> MiddlewareT m -- ^ The response to send
            -> RouterT resultContent sec m ()
 match !ts !vl =
   tell' $ Tries (singleton ts vl)
@@ -149,8 +149,8 @@ match !ts !vl =
 
 -- | Create a handle for the /current/ route - an alias for @\h -> match o_ h@.
 matchHere :: ( Monad m
-             ) => content -- ^ The response to send
-               -> RouterT content sec m ()
+             ) => MiddlewareT m -- ^ The response to send
+               -> RouterT (MiddlewareT m) sec m ()
 matchHere = match origin_
 
 {-# INLINEABLE matchHere #-}
@@ -160,8 +160,8 @@ matchHere = match origin_
 --   use this for a catch-all at some level in their routes, something
 --   like a @not-found 404@ page is useful.
 matchAny :: ( Monad m
-            ) => content -- ^ The response to send
-              -> RouterT content sec m ()
+            ) => MiddlewareT m -- ^ The response to send
+              -> RouterT (MiddlewareT m) sec m ()
 matchAny !vl =
   tell' $ Tries mempty
                 (singleton origin_ vl)
