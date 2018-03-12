@@ -1,5 +1,5 @@
 name: nested-routes
-version: 8.1.0
+version: 8.2.0
 synopsis: Declarative, compositional Wai responses
 description:
   This library attempts to make it easier to write nice Wai response handlers
@@ -51,35 +51,18 @@ library:
 
 tests:
   spec:
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -Wall
+      - -with-rtsopts=-N
     main: Test.hs
     source-dirs:
       - test
-      - src
     dependencies:
       - base
-      # - nested-routes
-      - attoparsec
-      - bytestring
-      - composition-extra
-      - errors
-      - exceptions
-      - hashable
-      - hashtables
-      - HSet
+      - nested-routes
       - http-types
-      - mtl
-      - poly-arity
-      - pred-trie
-      - pred-set
-      - regex-compat
-      - semigroups
-      - text
-      - transformers
-      - tries
-      - unordered-containers
-      - wai-transformers
-      - wai-middleware-content-type
-      - wai-middleware-verbs
       - hspec
       - hspec-wai
       - tasty
