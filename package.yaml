@@ -1,19 +1,7 @@
 name: nested-routes
-version: 8.2.0
+version: 9.0.0
 synopsis: Declarative, compositional Wai responses
-description:
-  This library attempts to make it easier to write nice Wai response handlers
-  by giving us a Sinatra/
-  <https://hackage.haskell.org/package/scotty Scotty>-like syntax for declaring HTTP-verb oriented
-  routes, in addition to file-extension handling and rose-tree like composition.
-  Not only do we have literal route specification, like
-  <https://hackage.haskell.org/package/scotty Scotty> &
-  <https://hackage.haskell.org/package/spock Spock>, but we
-  can also embed
-  <https://hackage.haskell.org/package/attoparsec Attoparsec>
-  parsers and <https://hackage.haskell.org/package/regex-compat Regular Expressions>
-  /directly/ in our routes, with our handlers
-  reflecting their results.
+description: Please see the README on Github at <https://git.localcooking.com/tooling/pred-trie#readme>
 maintainer: Athan Clark <athan.clark@gmail.com>
 license: BSD3
 github: athanclark/nested-routes
@@ -24,27 +12,21 @@ ghc-options: -Wall
 dependencies:
   - base >= 4.9 && < 5
   - attoparsec
-  - bifunctors
-  - bytestring
   - errors
   - exceptions
   - extractable-singleton
   - hashable
-  - hashtables
   - monad-control-aligned
   - mtl
   - poly-arity >= 0.0.7
-  - pred-set >= 0.0.1
-  - pred-trie >= 0.5.1
+  - pred-trie >= 0.6.0
   - regex-compat
-  - semigroups
   - text
-  - transformers
-  - tries
+  - tries >= 0.0.5
   - unordered-containers
   - wai-transformers >= 0.0.7
-  - wai-middleware-content-type >= 0.5.0.1
-  - wai-middleware-verbs >= 0.3.1
+  - wai-middleware-content-type >= 0.6.0
+  - wai-middleware-verbs >= 0.3.2
 
 library:
   source-dirs: src
