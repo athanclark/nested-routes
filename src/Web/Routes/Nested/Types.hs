@@ -29,9 +29,10 @@ module Web.Routes.Nested.Types
   ) where
 
 import           Web.Routes.Nested.Match             (UrlChunks)
-import           Network.Wai.Middleware.Verbs        (VerbListenerT, execVerbListenerT, lookupVerb, getVerb)
+import           Network.Wai.Middleware.Verbs        (VerbListenerT, execVerbListenerT, getVerbFromRequest)
 import           Network.Wai.Middleware.ContentType  (FileExtListenerT, fileExtsToMiddleware)
 import           Network.Wai.Trans                   (MiddlewareT)
+import           Network.Wai                         (strictRequestBody)
 import           Data.Trie.Pred.Base                 (RootedPredTrie (..))
 import           Data.Trie.Pred.Interface.Types      (Extrude (..), CatMaybes)
 
@@ -39,10 +40,11 @@ import           Data.Monoid                         ((<>))
 import qualified Data.Text                           as T
 import           Data.Function.Poly                  (ArityTypeListIso)
 import           Data.Singleton.Class                (Extractable)
+import qualified Data.HashMap.Lazy                   as HM
 import           Control.Monad.Trans                 (MonadTrans)
 import           Control.Monad.IO.Class              (MonadIO)
 import qualified Control.Monad.State                 as S
-import           Control.Monad.Trans.Control.Aligned (MonadBaseControl)
+import           Control.Monad.Trans.Control.Aligned (MonadBaseControl (liftBaseWith))
 
 
 
@@ -57,9 +59,7 @@ data Tries x s = Tries
 instance Monoid (Tries x s) where
   mempty = Tries mempty mempty mempty
   mappend (Tries x1 x2 x3) (Tries y1 y2 y3) =
-    ((Tries $! x1 <> y1)
-            $! x2 <> y2)
-            $! x3 <> y3
+    Tries (x1 <> y1) (x2 <> y2) (x3 <> y3)
 
 -- | The (syntactic) monad for building a router with functions like
 --   "Web.Routes.Nested.match".
@@ -97,9 +97,14 @@ type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
 --   is satisfiable (i.e. @Accept@ headers are O.K., etc.)
 action :: MonadBaseControl IO m stM
        => Extractable stM
-       => ActionT m () -> MiddlewareT m
+       => ActionT m ()
+       -> MiddlewareT m
 action xs app req respond = do
-  vmap <- fmap fileExtsToMiddleware <$> execVerbListenerT xs
-  case lookupVerb (getVerb req) vmap of
-    Nothing  -> app req respond
-    Just mid -> mid app req respond
+  vmap <- execVerbListenerT xs
+  case HM.lookup (getVerbFromRequest req) vmap of
+    Nothing -> app req respond
+    Just eR -> do
+      c <- case eR of
+        Left c' -> pure c'
+        Right f -> f <$> liftBaseWith (\_ -> strictRequestBody req)
+      fileExtsToMiddleware c app req respond

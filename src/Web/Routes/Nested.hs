@@ -79,7 +79,8 @@ import           Web.Routes.Nested.Match            (UrlChunks, origin_)
 import           Web.Routes.Nested.Match
 import           Web.Routes.Nested.Types            (RouterT, execRouterT, Tries (..), ExtrudeSoundly)
 import           Web.Routes.Nested.Types
-import           Network.Wai.Trans                  (MiddlewareT, Request, pathInfo)
+import           Network.Wai                        (Request, pathInfo)
+import           Network.Wai.Trans                  (MiddlewareT)
 import           Network.Wai.Middleware.Verbs
 import           Network.Wai.Middleware.ContentType hiding (responseStatus, responseHeaders, responseData)
 
@@ -134,11 +135,11 @@ type MatchGroup xs' xs childContent resultContent childSec resultSec =
 --   Generally, if the routes you are building get grouped
 --   by a predicate with 'matchGroup',
 --   then we would need another level of arity /before/ the @Double@.
-match :: ( Monad m
-         , Match xs' xs childContent resultContent
-         ) => UrlChunks xs -- ^ Predicative path to match against
-           -> childContent -- ^ The response to send
-           -> RouterT resultContent sec m ()
+match :: Monad m
+      => Match xs' xs childContent resultContent
+      => UrlChunks xs -- ^ Predicative path to match against
+      -> childContent -- ^ The response to send
+      -> RouterT resultContent sec m ()
 match !ts !vl =
   tell' $ Tries (singleton ts vl)
                 mempty
@@ -148,9 +149,9 @@ match !ts !vl =
 {-# INLINEABLE match #-}
 
 -- | Create a handle for the /current/ route - an alias for @\h -> match o_ h@.
-matchHere :: ( Monad m
-             ) => childContent -- ^ The response to send
-               -> RouterT childContent sec m ()
+matchHere :: Monad m
+          => childContent -- ^ The response to send
+          -> RouterT childContent sec m ()
 matchHere = match origin_
 
 {-# INLINEABLE matchHere #-}
@@ -159,9 +160,9 @@ matchHere = match origin_
 -- | Match against any route, as a last resort against all failing matches -
 --   use this for a catch-all at some level in their routes, something
 --   like a @not-found 404@ page is useful.
-matchAny :: ( Monad m
-            ) => childContent -- ^ The response to send
-              -> RouterT childContent sec m ()
+matchAny :: Monad m
+         => childContent -- ^ The response to send
+         -> RouterT childContent sec m ()
 matchAny !vl =
   tell' $ Tries mempty
                 (singleton origin_ vl)
@@ -174,11 +175,11 @@ matchAny !vl =
 -- | Prepends a common route to an existing set of routes. You should note that
 --   doing this with a parser or regular expression will necessitate the existing
 --   arity in the handlers before the progam can compile.
-matchGroup :: ( Monad m
-              , MatchGroup xs' xs childContent resultContent childSec resultSec
-              ) => UrlChunks xs -- ^ Predicative path to match against
-                -> RouterT childContent  childSec  m () -- ^ Child routes to nest
-                -> RouterT resultContent resultSec m ()
+matchGroup :: Monad m
+           => MatchGroup xs' xs childContent resultContent childSec resultSec
+           => UrlChunks xs -- ^ Predicative path to match against
+           -> RouterT childContent  childSec  m () -- ^ Child routes to nest
+           -> RouterT resultContent resultSec m ()
 matchGroup !ts cs = do
   (Tries trieContent' trieNotFound trieSec) <- lift $ execRouterT cs
   tell' $ Tries (extrude ts trieContent')
@@ -205,14 +206,14 @@ data AuthScope
 
 -- | Sets the security role and error handler for a set of routes, optionally
 -- including its parent route.
-auth :: ( Monad m
-        ) => sec -- ^ Your security token
-          -> AuthScope
-          -> RouterT content (SecurityToken sec) m ()
+auth :: Monad m
+     => sec -- ^ Your security token
+     -> AuthScope
+     -> RouterT content (SecurityToken sec) m ()
 auth !token !scope =
-  tell' $ Tries mempty
+  tell'  (Tries mempty
                 mempty
-                (singleton origin_ $ SecurityToken token scope)
+                (singleton origin_ (SecurityToken token scope)))
 
 
 {-# INLINEABLE auth #-}
@@ -227,9 +228,9 @@ auth !token !scope =
 --   with 'routeAuth':
 --
 --   > route routes . routeAuth routes
-route :: ( MonadIO m
-         ) => RouterT (MiddlewareT m) sec m a -- ^ The Router
-           -> MiddlewareT m
+route :: MonadIO m
+      => RouterT (MiddlewareT m) sec m a -- ^ The Router
+      -> MiddlewareT m
 route hs app req resp = do
   let path = pathInfo req
   mightMatch <- extractMatch path hs
@@ -247,11 +248,11 @@ route hs app req resp = do
 --   an exception based on the current 'Network.Wai.Middleware.Request' and
 --   the /layers/ of 'auth' tokens passed in your router, turn your router
 --   into a 'Control.Monad.guard' for middlewares, basically.
-routeAuth :: ( MonadIO m
-             , MonadThrow m
-             ) => (Request -> [sec] -> m ()) -- ^ authorization method
-               -> RouterT (MiddlewareT m) (SecurityToken sec) m a -- ^ The Router
-               -> MiddlewareT m
+routeAuth :: MonadIO m
+          => MonadThrow m
+          => (Request -> [sec] -> m ()) -- ^ authorization method
+          -> RouterT (MiddlewareT m) (SecurityToken sec) m a -- ^ The Router
+          -> MiddlewareT m
 routeAuth authorize hs app req resp = do
   extractAuth authorize req hs
   route hs app req resp
@@ -259,10 +260,10 @@ routeAuth authorize hs app req resp = do
 -- * Extraction -------------------------------
 
 -- | Extracts only the normal 'match', 'matchGroup' and 'matchHere' routes.
-extractMatch :: ( MonadIO m
-                ) => [T.Text] -- ^ The path to match against
-                  -> RouterT r sec m a -- ^ The Router
-                  -> m (Maybe r)
+extractMatch :: MonadIO m
+             => [T.Text] -- ^ The path to match against
+             -> RouterT r sec m a -- ^ The Router
+             -> m (Maybe r)
 extractMatch path !hs = do
   Tries{trieContent} <- execRouterT hs
   let mResult = lookupWithLRPT trimFileExt path trieContent
@@ -278,10 +279,10 @@ extractMatch path !hs = do
 
 
 -- | Extracts only the 'matchAny' responses; something like the greatest-lower-bound.
-extractMatchAny :: ( MonadIO m
-                   ) => [T.Text] -- ^ The path to match against
-                     -> RouterT r sec m a -- ^ The Router
-                     -> m (Maybe r)
+extractMatchAny :: MonadIO m
+                => [T.Text] -- ^ The path to match against
+                -> RouterT r sec m a -- ^ The Router
+                -> m (Maybe r)
 extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execRouterT x)
 
 {-# INLINEABLE extractMatchAny #-}
@@ -290,10 +291,10 @@ extractMatchAny path = extractNearestVia path (\x -> trieCatchAll <$> execRouter
 
 -- | Find the security tokens / authorization roles affiliated with
 --   a request for a set of routes.
-extractAuthSym :: ( MonadIO m
-                  ) => [T.Text] -- ^ The path to match against
-                    -> RouterT x (SecurityToken sec) m a -- ^ The Router
-                    -> m [sec]
+extractAuthSym :: MonadIO m
+               => [T.Text] -- ^ The path to match against
+               -> RouterT x (SecurityToken sec) m a -- ^ The Router
+               -> m [sec]
 extractAuthSym path hs = do
   Tries{trieSecurity} <- execRouterT hs
   liftIO . stToIO $ do
@@ -306,12 +307,12 @@ extractAuthSym path hs = do
 {-# INLINEABLE extractAuthSym #-}
 
 -- | Extracts only the security handling logic, and turns it into a guard.
-extractAuth :: ( MonadIO m
-               , MonadThrow m
-               ) => (Request -> [sec] -> m ()) -- ^ authorization method
-                 -> Request
-                 -> RouterT x (SecurityToken sec) m a
-                 -> m ()
+extractAuth :: MonadIO m
+            => MonadThrow m
+            => (Request -> [sec] -> m ()) -- ^ authorization method
+            -> Request
+            -> RouterT x (SecurityToken sec) m a
+            -> m ()
 extractAuth authorize req hs = do
   ss <- extractAuthSym (pathInfo req) hs
   authorize req ss
@@ -322,11 +323,11 @@ extractAuth authorize req hs = do
 -- | Given a way to draw out a special-purpose trie from our route set, route
 --   to the responses based on a /furthest-route-reached/ method, or like a
 --   greatest-lower-bound.
-extractNearestVia :: ( MonadIO m
-                     ) => [T.Text] -- ^ The path to match against
-                       -> (RouterT r sec m a -> m (RootedPredTrie T.Text r))
-                       -> RouterT r sec m a
-                       -> m (Maybe r)
+extractNearestVia :: MonadIO m
+                  => [T.Text] -- ^ The path to match against
+                  -> (RouterT r sec m a -> m (RootedPredTrie T.Text r))
+                  -> RouterT r sec m a
+                  -> m (Maybe r)
 extractNearestVia path extr hs = do
   trie <- extr hs
   pure (mid <$> Interface.match path trie)
@@ -353,19 +354,19 @@ trimFileExt !s =
 
 -- | A quirky function for processing the last element of a lookup path, only
 -- on /literal/ matches.
-lookupWithLPT :: ( Hashable s
-                 , Eq s
-                 ) => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
+lookupWithLPT :: Hashable s
+              => Eq s
+              => (s -> s) -> NonEmpty s -> PredTrie s a -> Maybe ([s], a)
 lookupWithLPT f tss (PredTrie (HashMapStep ls) (PredStep ps)) =
   getFirst $ First (goLit f tss ls)
           <> foldMap (First . goPred f tss) ps
 
-goLit :: ( Hashable s
-         , Eq s
-         ) => (s -> s)
-           -> NonEmpty s
-           -> HM.HashMap s (HashMapChildren PredTrie s a)
-           -> Maybe ([s], a)
+goLit :: Hashable s
+      => Eq s
+      => (s -> s)
+      -> NonEmpty s
+      -> HM.HashMap s (HashMapChildren PredTrie s a)
+      -> Maybe ([s], a)
 goLit f (t:|ts) xs = do
   (HashMapChildren mx mxs) <- getFirst $ First (HM.lookup t xs)
                                       <> First (  if null ts
@@ -375,12 +376,12 @@ goLit f (t:|ts) xs = do
   then ([f t],) <$> mx
   else first (t:) <$> (lookupWithLPT f (fromList ts) =<< mxs)
 
-goPred :: ( Hashable s
-          , Eq s
-          ) => (s -> s)
-            -> NonEmpty s
-            -> Pred PredTrie s a
-            -> Maybe ([s], a)
+goPred :: Hashable s
+       => Eq s
+       => (s -> s)
+       -> NonEmpty s
+       -> Pred PredTrie s a
+       -> Maybe ([s], a)
 goPred f (t:|ts) (Pred predicate mx xs) = do
   d <- predicate t
   if null ts
@@ -392,9 +393,9 @@ goPred f (t:|ts) (Pred predicate mx xs) = do
 {-# INLINEABLE lookupWithLPT #-}
 
 
-lookupWithLRPT :: ( Hashable s
-                 , Eq s
-                 ) => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
+lookupWithLRPT :: Hashable s
+               => Eq s
+               => (s -> s) -> [s] -> RootedPredTrie s a -> Maybe ([s], a)
 lookupWithLRPT _ [] (RootedPredTrie mx _) = ([],) <$> mx
 lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (fromList ts) xs
 
@@ -403,7 +404,7 @@ lookupWithLRPT f ts (RootedPredTrie _ xs) = lookupWithLPT f (fromList ts) xs
 {-# INLINEABLE lookupWithLRPT #-}
 
 
-tell' :: (Monoid w, S.MonadState w m) => w -> m ()
+tell' :: Monoid w => S.MonadState w m => w -> m ()
 tell' x = S.modify' (<> x)
 
 {-# INLINEABLE tell' #-}

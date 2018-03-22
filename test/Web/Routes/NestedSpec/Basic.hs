@@ -9,7 +9,8 @@
 module Web.Routes.NestedSpec.Basic where
 
 import Web.Routes.Nested (o_, p_, l_, r_, (</>), match, matchHere, matchGroup, auth, AuthScope (..), textOnly, routeAuth)
-import Network.Wai.Trans (Middleware, Application, Request, catchMiddlewareT)
+import Network.Wai (Middleware, Application, Request)
+import Network.Wai.Trans (catchMiddlewareT)
 import Network.HTTP.Types (status401, status404, status200)
 import Text.Regex (mkRegex)
 import Data.Attoparsec.Text (double)

@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c01d97006f99cd2296688bd70d1bff61663c843911d5c92a8484e2e578934d31
+-- hash: 23396eb133d1c0b4eabee7dbb44fc9b6739eb73776e937055a72d9bd86144294
 
 name:           nested-routes
-version:        9.0.0
+version:        9.0.0.1
 synopsis:       Declarative, compositional Wai responses
 description:    Please see the README on Github at <https://git.localcooking.com/tooling/pred-trie#readme>
 category:       Web
@@ -46,9 +46,10 @@ library
     , text
     , tries >=0.0.5
     , unordered-containers
-    , wai-middleware-content-type >=0.6.0
-    , wai-middleware-verbs >=0.3.2
-    , wai-transformers >=0.0.7
+    , wai >=3.2.1
+    , wai-middleware-content-type >=0.6.1.1
+    , wai-middleware-verbs >=0.4.0.1
+    , wai-transformers >=0.1.0
   default-language: Haskell2010
 
 test-suite spec
@@ -83,7 +84,8 @@ test-suite spec
     , text
     , tries >=0.0.5
     , unordered-containers
-    , wai-middleware-content-type >=0.6.0
-    , wai-middleware-verbs >=0.3.2
-    , wai-transformers >=0.0.7
+    , wai >=3.2.1
+    , wai-middleware-content-type >=0.6.1.1
+    , wai-middleware-verbs >=0.4.0.1
+    , wai-transformers >=0.1.0
   default-language: Haskell2010
