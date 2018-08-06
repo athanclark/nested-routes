@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 23396eb133d1c0b4eabee7dbb44fc9b6739eb73776e937055a72d9bd86144294
+-- hash: 3e8013394f44110c339b869ca9cdfd965951c1043dc59d401b0eecb264018584
 
 name:           nested-routes
-version:        9.0.0.1
+version:        9.0.1.0
 synopsis:       Declarative, compositional Wai responses
 description:    Please see the README on Github at <https://git.localcooking.com/tooling/pred-trie#readme>
 category:       Web

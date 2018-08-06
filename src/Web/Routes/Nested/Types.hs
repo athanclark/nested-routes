@@ -8,7 +8,7 @@
 
 {- |
 Module      : Web.Routes.Nested.Types
-Copyright   : (c) 2015 Athan Clark
+Copyright   : (c) 2015, 2016, 2017, 2018 Athan Clark
 
 License     : BSD-style
 Maintainer  : athan.clark@gmail.com

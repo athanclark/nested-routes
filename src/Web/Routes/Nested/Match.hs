@@ -4,11 +4,13 @@
   , RankNTypes
   , TypeOperators
   , OverloadedStrings
+  , MultiParamTypeClasses
+  , FunctionalDependencies
   #-}
 
 {- |
 Module      : Web.Routes.Nested.Match
-Copyright   : (c) 2015 Athan Clark
+Copyright   : (c) 2015, 2016, 2017, 2018 Athan Clark
 
 License     : BSD-style
 Maintainer  : athan.clark@gmail.com
@@ -33,6 +35,7 @@ module Web.Routes.Nested.Match
   , -- ** Path Types
     EitherUrlChunk
   , UrlChunks
+  , ToUrlChunks (..)
   ) where
 
 import Prelude              hiding (pred)
@@ -98,3 +101,6 @@ type UrlChunks = PathChunks T.Text
 infixr 9 </>
 
 
+
+class ToUrlChunks a xs | a -> xs where
+  toUrlChunks :: a -> UrlChunks xs
