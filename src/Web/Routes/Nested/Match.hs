@@ -3,6 +3,7 @@
   , DataKinds
   , RankNTypes
   , TypeOperators
+  , KindSignatures
   , OverloadedStrings
   , MultiParamTypeClasses
   , FunctionalDependencies
@@ -63,7 +64,7 @@ literal_ = only
 f_, file_ :: T.Text -> EitherUrlChunk ('Just T.Text)
 f_ = file_
 
--- | Removes file extension from the matched route
+-- | Removes file extension from the matchedhttp://hackage.haskell.org/package/nested-routes route
 file_ f = pred_ f (\t -> t <$ guard (fst (T.breakOn "." t) == f))
 
 
@@ -102,5 +103,5 @@ infixr 9 </>
 
 
 
-class ToUrlChunks a xs | a -> xs where
+class ToUrlChunks a (xs :: [Maybe *]) | a -> xs where
   toUrlChunks :: a -> UrlChunks xs
