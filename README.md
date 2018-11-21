@@ -8,9 +8,9 @@ routes = do
       json ("some cool json", True, 12) -- application/json
       text "Yo" -- text/plain
   matchGroup (l_ "someChunk" </> o_) $ do
-    match (p_ "some parser" Attoparsec.doube </> o_) $ \(d :: Double) -> -- /someChunk/124.234 would match
+    match (p_ "some parser" Attoparsec.doube </> o_) $ \(d :: Double) -> -- "/someChunk/124.234" would match
       action $ ...
-    matchGroup (r_ [regex|/^(\.)+(.*)/|] </> o_) $ \(matches :: [String]) -> -- /someChunk/....huh? would match
+    matchGroup (r_ [regex|/^(\.)+(.*)/|] </> o_) $ \(matches :: [String]) -> -- "/someChunk/....huh?" would match
       action $ ...
       
       

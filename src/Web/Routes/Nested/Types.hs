@@ -56,10 +56,12 @@ data Tries x s = Tries
   }
 
 
+instance Semigroup (Tries x s) where
+  (Tries x1 x2 x3) <> (Tries y1 y2 y3) =
+    Tries (x1 <> y1) (x2 <> y2) (x3 <> y3)
+
 instance Monoid (Tries x s) where
   mempty = Tries mempty mempty mempty
-  mappend (Tries x1 x2 x3) (Tries y1 y2 y3) =
-    Tries (x1 <> y1) (x2 <> y2) (x3 <> y3)
 
 -- | The (syntactic) monad for building a router with functions like
 --   "Web.Routes.Nested.match".

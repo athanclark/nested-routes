@@ -1,7 +1,7 @@
 name: nested-routes
-version: 9.0.1.1
+version: 9.0.2
 synopsis: Declarative, compositional Wai responses
-description: Please see the README on Github at <https://git.localcooking.com/tooling/pred-trie#readme>
+description: Please see the README on Github at <https://github.com/athanclark/nested-routes#readme>
 maintainer: Athan Clark <athan.clark@gmail.com>
 license: BSD3
 github: athanclark/nested-routes
