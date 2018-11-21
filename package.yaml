@@ -10,7 +10,7 @@ category: Web
 ghc-options: -Wall
 
 dependencies:
-  - base >= 4.9 && < 5
+  - base >= 4.11 && < 5
   - attoparsec
   - errors
   - exceptions
@@ -19,14 +19,14 @@ dependencies:
   - monad-control-aligned
   - mtl
   - poly-arity >= 0.0.7
-  - pred-trie >= 0.6.0
+  - pred-trie >= 0.6.1
   - regex-compat
   - text
-  - tries >= 0.0.5
+  - tries >= 0.0.6
   - unordered-containers
   - wai >= 3.2.1
   - wai-transformers >= 0.1.0
-  - wai-middleware-content-type >= 0.6.1.1
+  - wai-middleware-content-type >= 0.6.2
   - wai-middleware-verbs >= 0.4.0.1
 
 library:
