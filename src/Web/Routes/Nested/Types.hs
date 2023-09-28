@@ -93,13 +93,13 @@ type ExtrudeSoundly xs' xs c r =
 --   <https://hackage.haskell.org/package/wai-middleware-verbs wai-middleware-verbs>
 --   and <https://hackage.haskell.org/package/wai-middleware-content-type wai-middleware-content-type>
 --   packages.
-type ActionT m a = VerbListenerT (FileExtListenerT m a) m a
+type ActionT urlbase m a = VerbListenerT (FileExtListenerT urlbase m a) m a
 
 -- | Run the content builder into a middleware that responds when the content
 --   is satisfiable (i.e. @Accept@ headers are O.K., etc.)
 action :: MonadBaseControl IO m stM
        => Extractable stM
-       => ActionT m ()
+       => ActionT urlbase m ()
        -> MiddlewareT m
 action xs app req respond = do
   vmap <- execVerbListenerT xs

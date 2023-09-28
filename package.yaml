@@ -1,5 +1,5 @@
 name: nested-routes
-version: 9.0.2
+version: 10.0.0
 synopsis: Declarative, compositional Wai responses
 description: Please see the README on Github at <https://github.com/athanclark/nested-routes#readme>
 maintainer: Athan Clark <athan.clark@gmail.com>
@@ -16,7 +16,7 @@ dependencies:
   - exceptions
   - extractable-singleton
   - hashable
-  - monad-control-aligned
+  - monad-control-aligned >= 0.0.2
   - mtl
   - poly-arity >= 0.0.7
   - pred-trie >= 0.6.1
@@ -26,7 +26,7 @@ dependencies:
   - unordered-containers
   - wai >= 3.2.1
   - wai-transformers >= 0.1.0
-  - wai-middleware-content-type >= 0.6.2
+  - wai-middleware-content-type >= 0.7.0
   - wai-middleware-verbs >= 0.4.0.1
 
 library:

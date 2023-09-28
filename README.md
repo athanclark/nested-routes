@@ -1,4 +1,4 @@
-![Logo](https://cdn.rawgit.com/athanclark/nested-routes-website/master/static/images/logo.svg)
+![Logo](https://raw.githubusercontent.com/athanclark/nested-routes/269e8dd2105e9fea314b4374e19ecacca6f50659/logo.svg)
 
 ```haskell
 routes :: RouterT (MiddlewareT m) sec m ()
@@ -12,8 +12,8 @@ routes = do
       action $ ...
     matchGroup (r_ [regex|/^(\.)+(.*)/|] </> o_) $ \(matches :: [String]) -> -- "/someChunk/....huh?" would match
       action $ ...
-      
-      
+
+
 myMiddleware :: MiddlewareT m
 myMiddleware = route routes
 ```
