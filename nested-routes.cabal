@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 46f6b93f3e55e54f21ddbd8c769a76a36cfb24244f193d522bae9fc2fb3a56f8
+-- hash: 40872453e434f8694f8801dfc1394a8ed0674e4dc6d8918b4906b0d03fee8f92
 
 name:           nested-routes
-version:        9.0.2
+version:        10.0.0
 synopsis:       Declarative, compositional Wai responses
 description:    Please see the README on Github at <https://github.com/athanclark/nested-routes#readme>
 category:       Web
